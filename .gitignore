@@ -1,0 +1,25 @@
+# Credenciales y datos sensibles
+.env
+*.csv
+hotel_demand_*.md
+update_worklogs.py
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archivos temporales
+*.log
+*.tmp
