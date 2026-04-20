@@ -1,342 +1,260 @@
 <p align="center">
-  <img src="logo.svg" alt="TJira logo" width="140" />
+  <img src="tjira-logo.svg" alt="TJira" width="300" />
 </p>
 
-<h1 align="center">TJira</h1>
+<p align="center">
+  <strong>The scissors for your Jira backlog.</strong><br>
+  Cut through issues, worklogs and sprints — straight from the CLI.
+</p>
 
 <p align="center">
-  <em>The scissors for your Jira backlog — cut through tasks, worklogs and issues from the CLI.</em>
+  <img src="https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white" alt="Python 3.9+" />
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
+  <img src="https://img.shields.io/badge/output-JSON-orange" alt="JSON output" />
+  <img src="https://img.shields.io/badge/AI--ready-yes-blueviolet" alt="AI ready" />
+  <img src="https://img.shields.io/badge/Jira-REST%20API-0052CC?logo=jira&logoColor=white" alt="Jira REST" />
 </p>
 
 ---
 
-**TJira** is a CLI to manage Jira tasks and worklogs via REST API. Automate time tracking, task creation, issue management, and bulk operations from the command line.
+## Why TJira?
 
-Ships as **`tjira`** — a unified CLI with `--json` output on every command, designed to be consumed by humans, scripts, or AI agents (Claude, GPT, CI jobs).
+Manage Jira from the terminal with output designed for **humans _and_ AI agents**.
 
-## Features
+- **One CLI, four verbs** — `log`, `issue`, `list`, `worklog`. That's it.
+- **JSON-first** — add `--json` to any command and get a stable, typed envelope.
+- **Script-safe** — exit codes `0/1/2`, data on stdout, logs on stderr. Pipe it into `jq`, wire it into CI, or let Claude / GPT call it as a tool.
+- **Bulk-friendly** — import or wipe worklogs from CSV with a single command.
+- **Timezone-aware** — configurable per environment, no more timestamp guessing.
 
-- **Unified CLI (`tjira`)** — one entry point, subcommands (`log`, `issue`, `list`, `worklog`)
-- **AI-friendly output** — `--json` flag on every command with stable schema; logs on stderr, data on stdout
-- **Standard exit codes** — `0` OK, `1` user error, `2` API error
-- **Timezone-aware** — configurable via `JIRA_TIMEZONE` (defaults to system local)
-- **Legacy scripts preserved** — the original `log_hours.py`, `create_task.py`, etc. keep working
+## Quick Start
+
+```bash
+# 1. Install
+pipx install .
+
+# 2. Configure — create a .env file (see section below)
+#    with JIRA_DOMAIN / JIRA_EMAIL / JIRA_API_TOKEN
+
+# 3. Go
+tjira list boards
+tjira log PROJ-123 2h --comment "Implemented feature X"
+```
 
 ## Installation
 
-### Option A — `pipx` (recommended)
+<table>
+<tr>
+<th>Option</th>
+<th>Command</th>
+<th>When to use</th>
+</tr>
+<tr>
+<td><b>pipx</b></td>
+<td><code>pipx install .</code></td>
+<td>Recommended — isolated, global <code>tjira</code> binary</td>
+</tr>
+<tr>
+<td><b>pip (editable)</b></td>
+<td><code>pip install -e .</code></td>
+<td>Local development — edit source, see changes instantly</td>
+</tr>
+<tr>
+<td><b>Module mode</b></td>
+<td><code>python -m tjira ...</code></td>
+<td>No install needed, just <code>pip install typer requests python-dotenv</code></td>
+</tr>
+</table>
 
-```bash
-pipx install .
-tjira --help
-```
-
-### Option B — editable install in a venv
-
-```bash
-python3 -m venv venv
-source venv/bin/activate   # Linux/Mac
-pip install -e .
-```
-
-### Option C — run without installing
-
-```bash
-pip install --user typer requests python-dotenv
-python3 -m tjira --help
-```
+> **Note:** editable installs require `pip >= 21.3` (PEP 660). Upgrade with `python -m pip install --upgrade pip` if needed.
 
 ## Configuration
 
-1. Get your Jira API token from: https://id.atlassian.com/manage-profile/security/api-tokens
-
+1. Grab your Jira API token at <https://id.atlassian.com/manage-profile/security/api-tokens>.
 2. Create a `.env` file in the project root:
 
 ```env
+# Required
 JIRA_DOMAIN=your-company.atlassian.net
 JIRA_EMAIL=your.email@company.com
 JIRA_API_TOKEN=your_api_token_here
 
-# Optional: override the system timezone used for worklogs
-JIRA_TIMEZONE=America/Argentina/Buenos_Aires
-
-# Optional: HTTP timeout in seconds (default 30)
-JIRA_TIMEOUT=30
+# Optional
+JIRA_TIMEZONE=America/Argentina/Buenos_Aires   # defaults to system local
+JIRA_TIMEOUT=30                                # HTTP timeout in seconds
 ```
 
-## `tjira` — Unified CLI
+## Commands
 
-All commands accept `--json` for machine-readable output. Without it, output is human-friendly tables.
+All commands accept `--json` for machine output. Without it, you get a clean human table.
 
-**Output contract**
-- `stdout` → data (human table or JSON envelope `{"ok": true, "data": ...}`)
-- `stderr` → progress logs (or `{"ok": false, "error": ...}` on failure)
-- Exit codes: `0` OK · `1` user error · `2` Jira/API error
-
-### Worklogs
+### `tjira log` — single worklog
 
 ```bash
-# Single worklog
 tjira log PROJ-123 2h
 tjira log PROJ-123 "1h 30m" "2026-04-20"
 tjira log PROJ-123 45m "2026-04-20 09:00" --comment "Bug fix" --json
-
-# Bulk import from CSV (see ESTRUCTURA_CSV.md)
-tjira worklog import worklogs.csv --dry-run
-tjira worklog import worklogs.csv --json
-
-# Bulk delete all worklogs of issues in CSV
-tjira worklog delete worklogs.csv --dry-run
 ```
 
-### Issues
+### `tjira issue` — CRUD + transitions
 
 ```bash
-# Get detail
-tjira issue get PROJ-123
-tjira issue get PROJ-123 --json
-
-# Create
-tjira issue create PROJ "Implement feature X"
-tjira issue create PROJ "Fix login bug" --type Bug --desc "Steps to reproduce..."
-
-# Update
+tjira issue get PROJ-123                         # detail view
+tjira issue create PROJ "Implement feature X"    # create Task
+tjira issue create PROJ "Fix login" --type Bug --desc "Steps to reproduce..."
 tjira issue update PROJ-123 --summary "New title"
 tjira issue update PROJ-123 --status "In Progress"
 tjira issue update PROJ-123 --assign me
 tjira issue update PROJ-123 --comment "Done" --attach screenshot.png
-
-# Available transitions
-tjira issue transitions PROJ-123 --json
+tjira issue transitions PROJ-123 --json          # available status changes
 ```
 
-### Lists / Search
+### `tjira list` — search & discovery
 
 ```bash
-# Issues
-tjira list issues                                    # my open issues
+tjira list issues                                         # my open issues
 tjira list issues --project PROJ --json
 tjira list issues --jql "project = PROJ AND created >= -7d" --limit 50
 
-# Boards / Sprints
 tjira list boards --project PROJ
 tjira list sprints 365
 tjira list sprint-issues 1234 --json
 tjira list board-issues 365 --json
 
-# Saved filters & dashboards
 tjira list filters
 tjira list filter-issues 10042 --json
 tjira list dashboards
 ```
 
-### AI integration example
-
-With `--json` plus standard exit codes, any agent can safely invoke the CLI:
+### `tjira worklog` — bulk CSV ops
 
 ```bash
-# Claude Code / any LLM tool call
+tjira worklog import worklogs.csv --dry-run       # preview
+tjira worklog import worklogs.csv --json          # import
+tjira worklog delete worklogs.csv --dry-run       # preview deletion
+```
+
+See [ESTRUCTURA_CSV.md](ESTRUCTURA_CSV.md) for the CSV schema.
+
+## Output Contract
+
+| Stream       | Contents                                                         |
+| ------------ | ---------------------------------------------------------------- |
+| `stdout`     | Data — either a human table or a JSON envelope                   |
+| `stderr`     | Progress logs, or `{"ok": false, "error": ...}` on failure       |
+| Exit `0`     | Success                                                          |
+| Exit `1`     | User error (bad args, missing env, invalid date…)                |
+| Exit `2`     | Jira/API error (network, 4xx, 5xx)                               |
+
+**JSON envelope on success:**
+
+```json
+{ "ok": true, "data": { "...": "..." } }
+```
+
+## Using TJira with AI Agents
+
+Because every command speaks JSON and respects exit codes, any LLM tool-use loop can call it safely:
+
+```bash
 result=$(tjira list issues --project PROJ --json)
 if [ $? -eq 0 ]; then
-  echo "$result" | jq '.data.issues[] | {key, status}'
+  echo "$result" | jq '.data.issues[] | {key, status, summary}'
 fi
 ```
 
----
-
-## Legacy scripts (preserved for backwards compatibility)
-
-> The scripts below are kept working for backwards compatibility. New usage should go through `tjira`.
-
-### Log Hours
-
-```bash
-# Log 2 hours now
-python log_hours.py PROJ-123 2h
-
-# Log with specific date
-python log_hours.py PROJ-123 2h "2026-01-05"
-
-# Log with specific date and time
-python log_hours.py PROJ-123 "1h 30m" "2026-01-05 14:00"
-```
-
-### Create Tasks
-
-```bash
-# Create a task
-python create_task.py PROJ "Implement new feature"
-
-# Create a bug
-python create_task.py PROJ "Fix login error" --type Bug
-
-# Create with description
-python create_task.py PROJ "Add caching" --desc "Implement Redis caching for API responses"
-```
-
-### Update Tasks
-
-```bash
-# View task details
-python update_task.py PROJ-123
-
-# Update title
-python update_task.py PROJ-123 --summary "New title"
-
-# Change status
-python update_task.py PROJ-123 --status "In Progress"
-
-# Assign to yourself
-python update_task.py PROJ-123 --assign me
-
-# View available transitions
-python update_task.py PROJ-123 --transitions
-```
-
-### List Tasks
-
-```bash
-# List your pending tasks
-python list_tasks.py
-
-# Filter by project
-python list_tasks.py --project PROJ
-
-# Filter by status
-python list_tasks.py --status "In Progress"
-
-# Custom JQL query
-python list_tasks.py --jql "project = PROJ AND created >= -7d"
-
-# Limit results
-python list_tasks.py --limit 50
-```
-
-### Bulk Import Worklogs
-
-Create a CSV file with the following format:
-
-```csv
-Jira Key,Task ID,Summary,Date,Started,Time Spent,Author
-PROJ-123,T-001,Task description,Monday 05/01,2026-01-05T09:00:00.000+0100,2h,email@company.com
-PROJ-124,T-002,Another task,Monday 05/01,2026-01-05T11:00:00.000+0100,3h,email@company.com
-```
-
-Then import:
-
-```bash
-# Preview what will be imported
-python import_worklogs.py worklogs.csv --dry-run
-
-# Import worklogs
-python import_worklogs.py worklogs.csv
-```
-
-### Delete Worklogs
-
-```bash
-# Preview what will be deleted
-python delete_worklogs.py worklogs.csv --dry-run
-
-# Delete all worklogs from issues in CSV
-python delete_worklogs.py worklogs.csv
-```
+Perfect for Claude Code tool definitions, GPT function-calling, or agent-style CI jobs.
 
 ## Project Structure
 
 ```
-JiraGestionREST/
-├── .env                  # Credentials (not in repo)
-├── pyproject.toml        # Packaging + entry point (tjira)
-├── README.md
-├── requirements.txt      # Legacy deps (pyproject is the source of truth)
-│
-├── tjira/            # Unified CLI package (NEW)
-│   ├── cli.py            # Typer app + entry point
-│   ├── client.py         # Jira REST client (raises APIError on failures)
-│   ├── config.py         # Credentials + env validation
-│   ├── errors.py         # Exit codes + typed exceptions
-│   ├── formatters.py     # Human vs JSON output normalizers
-│   ├── tz.py             # Timezone-aware datetime handling
+TJira/
+├── tjira/                    # Unified CLI package
+│   ├── cli.py                # Typer app + entry point
+│   ├── client.py             # Jira REST client (APIError on failures)
+│   ├── config.py             # Env validation
+│   ├── errors.py             # Exit codes + typed exceptions
+│   ├── formatters.py         # Human/JSON output normalizers
+│   ├── tz.py                 # Timezone-aware datetimes
 │   └── commands/
-│       ├── log.py        # tjira log
-│       ├── issue.py      # tjira issue {get,create,update,transitions}
-│       ├── list_cmd.py   # tjira list {issues,boards,sprints,...}
-│       └── worklog.py    # tjira worklog {import,delete}
+│       ├── log.py            # tjira log
+│       ├── issue.py          # tjira issue {get,create,update,transitions}
+│       ├── list_cmd.py       # tjira list {issues,boards,sprints,...}
+│       └── worklog.py        # tjira worklog {import,delete}
 │
-├── config.py             # Legacy config loader (kept for old scripts)
-├── jira_client.py        # Legacy client (kept for old scripts)
-├── log_hours.py          # Legacy: log worklogs
-├── create_task.py        # Legacy: create issues
-├── update_task.py        # Legacy: update issues
-├── list_tasks.py         # Legacy: search issues
-├── import_worklogs.py    # Legacy: bulk import from CSV
-└── delete_worklogs.py    # Legacy: bulk delete worklogs
+├── pyproject.toml            # Packaging + entry point
+├── README.md
+├── ESTRUCTURA_CSV.md         # CSV schema for bulk worklog ops
+├── tjira-logo.svg            # Banner logo (with wordmark)
+├── tjira-icon.svg            # Square app icon
+│
+└── (legacy scripts)          # log_hours.py, create_task.py, etc. — see below
 ```
 
-## JiraClient API
+<details>
+<summary><b>Legacy scripts</b> (kept for backwards compatibility)</summary>
 
-The `JiraClient` class can be imported and used in your own scripts:
+The original standalone scripts keep working. New usage should go through `tjira`.
+
+```bash
+# Worklogs
+python log_hours.py PROJ-123 2h
+python log_hours.py PROJ-123 "1h 30m" "2026-01-05 14:00"
+
+# Issues
+python create_task.py PROJ "Implement feature" --type Bug --desc "..."
+python update_task.py PROJ-123 --status "In Progress" --assign me
+python list_tasks.py --project PROJ --status "In Progress"
+
+# Bulk
+python import_worklogs.py worklogs.csv --dry-run
+python delete_worklogs.py worklogs.csv
+```
+
+### `JiraClient` Python API
 
 ```python
 from jira_client import JiraClient
 
 client = JiraClient()
-
-# Get issue details
 issue = client.get_issue("PROJ-123")
-
-# Create issue
-success, result = client.create_issue(
-    project_key="PROJ",
-    summary="New task",
-    issue_type="Task",
-    description="Task description"
-)
-
-# Add worklog
-success, result = client.add_worklog(
-    issue_key="PROJ-123",
-    time_spent="2h",
-    started="2026-01-05T09:00:00.000+0100"
-)
-
-# Search with JQL
+client.add_worklog(issue_key="PROJ-123", time_spent="2h",
+                   started="2026-01-05T09:00:00.000+0100")
 issues = client.search_issues("project = PROJ AND status = 'To Do'")
-
-# Get available transitions
-transitions = client.get_transitions("PROJ-123")
-
-# Change status
-client.transition_issue("PROJ-123", transition_id="31")
 ```
 
-## Available JiraClient Methods
+| Method                         | Description                       |
+| ------------------------------ | --------------------------------- |
+| `get_issue(key)`               | Get issue details                 |
+| `create_issue(...)`            | Create new issue                  |
+| `update_issue(key, fields)`    | Update issue fields               |
+| `assign_issue(key, user_id)`   | Assign issue to user              |
+| `transition_issue(key, id)`    | Change issue status               |
+| `get_transitions(key)`         | Get available transitions         |
+| `get_worklogs(key)`            | Get issue worklogs                |
+| `add_worklog(...)`             | Add worklog entry                 |
+| `delete_worklog(key, id)`      | Delete worklog                    |
+| `search_issues(jql)`           | Search with JQL                   |
+| `get_myself()`                 | Get current user info             |
+| `search_users(query)`          | Search users                      |
+| `get_projects()`               | List all projects                 |
+| `get_project(key)`             | Get project details               |
 
-| Method | Description |
-|--------|-------------|
-| `get_issue(key)` | Get issue details |
-| `create_issue(...)` | Create new issue |
-| `update_issue(key, fields)` | Update issue fields |
-| `assign_issue(key, user_id)` | Assign issue to user |
-| `transition_issue(key, id)` | Change issue status |
-| `get_transitions(key)` | Get available transitions |
-| `get_worklogs(key)` | Get issue worklogs |
-| `add_worklog(...)` | Add worklog entry |
-| `delete_worklog(key, id)` | Delete worklog |
-| `search_issues(jql)` | Search with JQL |
-| `get_myself()` | Get current user info |
-| `search_users(query)` | Search users |
-| `get_projects()` | List all projects |
-| `get_project(key)` | Get project details |
-
-## License
-
-MIT
+</details>
 
 ## Contributing
 
-1. Fork the repository
+1. Fork the repo
 2. Create a feature branch
-3. Make your changes
+3. Make your changes (and run `ruff check .` before committing)
 4. Submit a pull request
+
+## License
+
+**MIT** — do whatever you want, just don't blame us if your timesheets look weird.
+
+---
+
+<p align="center">
+  <sub>Built with <a href="https://typer.tiangolo.com">Typer</a> · Talks to Jira via REST · Made for humans and robots alike.</sub>
+</p>
