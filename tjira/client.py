@@ -9,7 +9,7 @@ Diferencias con `jira_client.py` (legacy, se mantiene por compatibilidad):
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 import requests
 from requests.auth import HTTPBasicAuth

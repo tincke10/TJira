@@ -48,10 +48,10 @@ def fail(err: TjiraError, *, as_json: bool) -> None:
     """
     if as_json:
         envelope = {"ok": False, "error": err.message, **err.payload}
-        print(json.dumps(envelope, ensure_ascii=False), file=sys.stderr)
+        print(json.dumps(envelope, ensure_ascii=False), file=sys.stderr, flush=True)
     else:
-        print(f"Error: {err.message}", file=sys.stderr)
+        print(f"Error: {err.message}", file=sys.stderr, flush=True)
         if err.payload:
             for key, value in err.payload.items():
-                print(f"  {key}: {value}", file=sys.stderr)
+                print(f"  {key}: {value}", file=sys.stderr, flush=True)
     sys.exit(err.exit_code)

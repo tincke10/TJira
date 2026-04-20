@@ -15,6 +15,7 @@ from __future__ import annotations
 import typer
 
 from tjira import __version__
+from tjira.commands import doctor as doctor_cmd
 from tjira.commands import issue as issue_cmd
 from tjira.commands import list_cmd
 from tjira.commands import log as log_cmd
@@ -53,6 +54,7 @@ log_cmd.register(app)
 issue_cmd.register(app)
 list_cmd.register(app)
 worklog_cmd.register(app)
+doctor_cmd.register(app)
 
 
 if __name__ == "__main__":

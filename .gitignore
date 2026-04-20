@@ -14,11 +14,32 @@ venv/
 env/
 .venv/
 
+# Packaging / build
+*.egg-info/
+*.egg
+build/
+dist/
+wheels/
+pip-wheel-metadata/
+
+# Testing / linting caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# OS cruft
+.DS_Store
+Thumbs.db
 
 # Archivos temporales
 *.log

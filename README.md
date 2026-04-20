@@ -8,8 +8,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/tincke10/JiraGestionREST/actions/workflows/ci.yml"><img src="https://github.com/tincke10/JiraGestionREST/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <img src="https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white" alt="Python 3.9+" />
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/output-JSON-orange" alt="JSON output" />
   <img src="https://img.shields.io/badge/AI--ready-yes-blueviolet" alt="AI ready" />
   <img src="https://img.shields.io/badge/Jira-REST%20API-0052CC?logo=jira&logoColor=white" alt="Jira REST" />
@@ -33,10 +34,13 @@ Manage Jira from the terminal with output designed for **humans _and_ AI agents*
 # 1. Install
 pipx install .
 
-# 2. Configure — create a .env file (see section below)
-#    with JIRA_DOMAIN / JIRA_EMAIL / JIRA_API_TOKEN
+# 2. Configure — copy the template and fill it in
+cp .env.example .env        # then set JIRA_DOMAIN / JIRA_EMAIL / JIRA_API_TOKEN
 
-# 3. Go
+# 3. Verify your setup
+tjira doctor                # validates env + credentials + connectivity
+
+# 4. Go
 tjira list boards
 tjira log PROJ-123 2h --comment "Implemented feature X"
 ```
@@ -88,6 +92,24 @@ JIRA_TIMEOUT=30                                # HTTP timeout in seconds
 
 All commands accept `--json` for machine output. Without it, you get a clean human table.
 
+### `tjira doctor` — health check
+
+Validates your setup end-to-end. Great for first-run onboarding and CI smoke tests.
+
+```bash
+tjira doctor              # human-friendly table of checks
+tjira doctor --json       # machine-readable for agents / automation
+```
+
+Checks performed:
+
+- `.env` and required vars (`JIRA_DOMAIN`, `JIRA_EMAIL`, `JIRA_API_TOKEN`) present
+- `JIRA_DOMAIN` has a plausible shape (host-only, no scheme, no trailing slash)
+- `JIRA_TIMEZONE` is a valid IANA timezone (if set)
+- Live `GET /myself` call to verify credentials actually work
+
+Exits `0` when every check passes, `1` otherwise — perfect as a preflight step in scripts.
+
 ### `tjira log` — single worklog
 
 ```bash
@@ -136,6 +158,17 @@ tjira worklog delete worklogs.csv --dry-run       # preview deletion
 
 See [ESTRUCTURA_CSV.md](ESTRUCTURA_CSV.md) for the CSV schema.
 
+## Shell Completion
+
+Tab-completion is built in (courtesy of Typer). Install it once per shell:
+
+```bash
+tjira --install-completion          # auto-detect current shell (bash/zsh/fish/powershell)
+```
+
+Then restart your shell and enjoy `tjira l<TAB>` → `log`, `list`. To preview the
+completion script without installing, run `tjira --show-completion`.
+
 ## Output Contract
 
 | Stream       | Contents                                                         |
@@ -177,70 +210,56 @@ TJira/
 │   ├── formatters.py         # Human/JSON output normalizers
 │   ├── tz.py                 # Timezone-aware datetimes
 │   └── commands/
+│       ├── doctor.py         # tjira doctor
 │       ├── log.py            # tjira log
 │       ├── issue.py          # tjira issue {get,create,update,transitions}
 │       ├── list_cmd.py       # tjira list {issues,boards,sprints,...}
 │       └── worklog.py        # tjira worklog {import,delete}
 │
-├── pyproject.toml            # Packaging + entry point
-├── README.md
-├── ESTRUCTURA_CSV.md         # CSV schema for bulk worklog ops
-├── tjira-logo.svg            # Banner logo (with wordmark)
-├── tjira-icon.svg            # Square app icon
+├── tests/                    # pytest suite (config, client, CLI, tz, formatters)
+├── legacy/                   # Pre-unification scripts (deprecated, still work)
+├── .github/workflows/ci.yml  # Lint (ruff) + tests (py3.9–3.12)
 │
-└── (legacy scripts)          # log_hours.py, create_task.py, etc. — see below
+├── pyproject.toml            # Packaging + entry point + ruff/pytest config
+├── README.md
+├── CHANGELOG.md
+├── LICENSE                   # MIT
+├── ESTRUCTURA_CSV.md         # CSV schema for bulk worklog ops
+├── .env.example              # Template for local credentials
+├── tjira-logo.svg            # Banner logo (with wordmark)
+└── tjira-icon.svg            # Square app icon
 ```
 
-<details>
-<summary><b>Legacy scripts</b> (kept for backwards compatibility)</summary>
+## Legacy Scripts
 
-The original standalone scripts keep working. New usage should go through `tjira`.
+The original standalone scripts (`log_hours.py`, `create_task.py`, etc.) have
+moved to [`legacy/`](legacy/) and remain fully functional for backwards
+compatibility. New code and users should prefer `tjira`. See
+[`legacy/README.md`](legacy/README.md) for the full mapping and migration
+guide.
 
 ```bash
-# Worklogs
-python log_hours.py PROJ-123 2h
-python log_hours.py PROJ-123 "1h 30m" "2026-01-05 14:00"
-
-# Issues
-python create_task.py PROJ "Implement feature" --type Bug --desc "..."
-python update_task.py PROJ-123 --status "In Progress" --assign me
-python list_tasks.py --project PROJ --status "In Progress"
-
-# Bulk
-python import_worklogs.py worklogs.csv --dry-run
-python delete_worklogs.py worklogs.csv
+python legacy/log_hours.py PROJ-123 2h         # still works
+python legacy/create_task.py PROJ "New task"   # still works
 ```
 
-### `JiraClient` Python API
+## Development
 
-```python
-from jira_client import JiraClient
+```bash
+# Clone and install with dev deps
+git clone https://github.com/tincke10/JiraGestionREST.git
+cd JiraGestionREST
+pip install -e ".[dev]"
 
-client = JiraClient()
-issue = client.get_issue("PROJ-123")
-client.add_worklog(issue_key="PROJ-123", time_spent="2h",
-                   started="2026-01-05T09:00:00.000+0100")
-issues = client.search_issues("project = PROJ AND status = 'To Do'")
+# Run the test suite (mocked HTTP, no real Jira calls)
+pytest
+
+# Lint
+ruff check .
 ```
 
-| Method                         | Description                       |
-| ------------------------------ | --------------------------------- |
-| `get_issue(key)`               | Get issue details                 |
-| `create_issue(...)`            | Create new issue                  |
-| `update_issue(key, fields)`    | Update issue fields               |
-| `assign_issue(key, user_id)`   | Assign issue to user              |
-| `transition_issue(key, id)`    | Change issue status               |
-| `get_transitions(key)`         | Get available transitions         |
-| `get_worklogs(key)`            | Get issue worklogs                |
-| `add_worklog(...)`             | Add worklog entry                 |
-| `delete_worklog(key, id)`      | Delete worklog                    |
-| `search_issues(jql)`           | Search with JQL                   |
-| `get_myself()`                 | Get current user info             |
-| `search_users(query)`          | Search users                      |
-| `get_projects()`               | List all projects                 |
-| `get_project(key)`             | Get project details               |
-
-</details>
+CI runs `ruff check` and `pytest` on Python 3.9 through 3.12 for every push
+and pull request — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Contributing
 

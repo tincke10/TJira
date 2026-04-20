@@ -47,8 +47,13 @@ Issues = "https://github.com/tincke10/JiraGestionREST/issues"
 
 [tool.setuptools.packages.find]
 include = ["tjira*"]
-exclude = ["tests*"]
+exclude = ["tests*", "legacy*"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+extend-exclude = ["legacy", "build", "dist", "*.egg-info"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
