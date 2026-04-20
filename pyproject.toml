@@ -7,7 +7,7 @@ name = "tjira"
 version = "0.1.0"
 description = "CLI unificado para gestionar Jira via REST con output JSON AI-friendly"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.13"
 license = { text = "MIT" }
 authors = [{ name = "tincke10" }]
 keywords = ["jira", "cli", "worklog", "automation", "ai"]
@@ -18,24 +18,22 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Bug Tracking",
     "Topic :: Utilities",
 ]
 dependencies = [
-    "requests>=2.28.0",
-    "python-dotenv>=1.0.0",
-    "typer>=0.12.0",
+    "requests>=2.32.5",
+    "python-dotenv>=1.2.1",
+    "typer>=0.23.2",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "responses>=0.24",
-    "ruff>=0.4",
+    "pytest>=8.4.2",
+    "responses>=0.26.0",
+    "ruff>=0.15.0",
 ]
 
 [project.scripts]
@@ -51,7 +49,7 @@ exclude = ["tests*", "legacy*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py313"
 extend-exclude = ["legacy", "build", "dist", "*.egg-info"]
 
 [tool.pytest.ini_options]

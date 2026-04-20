@@ -1,4 +1,4 @@
-"""Tests para manejo de timezones y parsing de fechas del usuario."""
+"""Tests for timezone handling and user-supplied date parsing."""
 
 from __future__ import annotations
 
@@ -24,19 +24,19 @@ def test_get_timezone_honors_env(monkeypatch: pytest.MonkeyPatch):
 def test_get_timezone_falls_back_to_local_when_unset(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("JIRA_TIMEZONE", raising=False)
     tz = get_timezone()
-    assert tz is not None  # algún tz siempre
+    assert tz is not None  # some tz is always returned
 
 
 def test_get_timezone_ignores_invalid_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("JIRA_TIMEZONE", "Not/A/Real/Timezone")
     tz = get_timezone()
-    # Cae al local; el invariante es que no explota y devuelve algo.
+    # Falls back to local; the invariant is that it does not raise and returns something.
     assert tz is not None
 
 
 def test_to_jira_datetime_formats_correctly():
     if ZoneInfo is None:
-        pytest.skip("zoneinfo no disponible")
+        pytest.skip("zoneinfo not available")
     dt = datetime(2026, 4, 20, 14, 30, 0, tzinfo=ZoneInfo("UTC"))
     result = to_jira_datetime(dt)
     assert result == "2026-04-20T14:30:00.000+0000"
@@ -71,5 +71,5 @@ def test_parse_user_datetime_dd_mm_yyyy(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_parse_user_datetime_raises_on_unknown_format():
-    with pytest.raises(ValueError, match="Formato de fecha"):
+    with pytest.raises(ValueError, match="Unrecognized date format"):
         parse_user_datetime("yesterday")

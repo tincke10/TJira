@@ -1,4 +1,4 @@
-"""Subcomando `tjira issue` — create / update / get / transition."""
+"""`tjira issue` subcommand — create / update / get / transition."""
 
 from __future__ import annotations
 
@@ -20,13 +20,13 @@ from tjira.formatters import (
 
 
 def register(app: typer.Typer) -> None:
-    issue_app = typer.Typer(help="Gestión de issues (create, update, get, transitions)")
+    issue_app = typer.Typer(help="Issue management (create, update, get, transitions)")
     app.add_typer(issue_app, name="issue")
 
-    @issue_app.command("get", help="Obtener detalle de una issue")
+    @issue_app.command("get", help="Fetch issue detail")
     def issue_get(
-        key: str = typer.Argument(..., help="Clave de la issue (ej: PROJ-123)"),
-        json_out: bool = typer.Option(False, "--json", help="Output JSON a stdout"),
+        key: str = typer.Argument(..., help="Issue key (e.g. PROJ-123)"),
+        json_out: bool = typer.Option(False, "--json", help="JSON output to stdout"),
     ) -> None:
         try:
             client = JiraClient()
@@ -35,14 +35,14 @@ def register(app: typer.Typer) -> None:
         except TjiraError as err:
             fail(err, as_json=json_out)
 
-    @issue_app.command("create", help="Crear una nueva issue")
+    @issue_app.command("create", help="Create a new issue")
     def issue_create(
-        project: str = typer.Argument(..., help="Clave del proyecto (ej: PROJ)"),
-        summary: str = typer.Argument(..., help="Título de la issue"),
-        type_: str = typer.Option("Task", "--type", "-t", help="Tipo (Task, Bug, Story, Epic)"),
-        description: Optional[str] = typer.Option(None, "--desc", "-d", help="Descripción"),
-        assign: Optional[str] = typer.Option(None, "--assign", "-a", help="accountId o 'me'"),
-        json_out: bool = typer.Option(False, "--json", help="Output JSON a stdout"),
+        project: str = typer.Argument(..., help="Project key (e.g. PROJ)"),
+        summary: str = typer.Argument(..., help="Issue title"),
+        type_: str = typer.Option("Task", "--type", "-t", help="Type (Task, Bug, Story, Epic)"),
+        description: Optional[str] = typer.Option(None, "--desc", "-d", help="Description"),
+        assign: Optional[str] = typer.Option(None, "--assign", "-a", help="accountId or 'me'"),
+        json_out: bool = typer.Option(False, "--json", help="JSON output to stdout"),
     ) -> None:
         try:
             client = JiraClient()
@@ -50,7 +50,7 @@ def register(app: typer.Typer) -> None:
             if assign:
                 assignee_id = _resolve_assignee(client, assign)
 
-            log(f"Creando {type_} en {project}...")
+            log(f"Creating {type_} in {project}...")
             result = client.create_issue(
                 project_key=project,
                 summary=summary,
@@ -75,19 +75,23 @@ def register(app: typer.Typer) -> None:
         except TjiraError as err:
             fail(err, as_json=json_out)
 
-    @issue_app.command("update", help="Actualizar una issue existente")
+    @issue_app.command("update", help="Update an existing issue")
     def issue_update(
-        key: str = typer.Argument(..., help="Clave de la issue"),
-        summary: Optional[str] = typer.Option(None, "--summary", "-s", help="Nuevo título"),
-        status: Optional[str] = typer.Option(None, "--status", help="Nuevo estado (nombre de transición)"),
-        assign: Optional[str] = typer.Option(None, "--assign", "-a", help="accountId o 'me'"),
-        description: Optional[str] = typer.Option(None, "--description", "-d", help="Nueva descripción"),
-        desc_file: Optional[Path] = typer.Option(
-            None, "--desc-file", help="Descripción desde archivo de texto"
+        key: str = typer.Argument(..., help="Issue key"),
+        summary: Optional[str] = typer.Option(None, "--summary", "-s", help="New title"),
+        status: Optional[str] = typer.Option(
+            None, "--status", help="New status (transition name)"
         ),
-        comment: Optional[str] = typer.Option(None, "--comment", "-c", help="Añadir comentario"),
-        attach: Optional[List[Path]] = typer.Option(None, "--attach", help="Archivos a adjuntar"),
-        json_out: bool = typer.Option(False, "--json", help="Output JSON a stdout"),
+        assign: Optional[str] = typer.Option(None, "--assign", "-a", help="accountId or 'me'"),
+        description: Optional[str] = typer.Option(
+            None, "--description", "-d", help="New description"
+        ),
+        desc_file: Optional[Path] = typer.Option(
+            None, "--desc-file", help="Description from a text file"
+        ),
+        comment: Optional[str] = typer.Option(None, "--comment", "-c", help="Add a comment"),
+        attach: Optional[List[Path]] = typer.Option(None, "--attach", help="Files to attach"),
+        json_out: bool = typer.Option(False, "--json", help="JSON output to stdout"),
     ) -> None:
         try:
             client = JiraClient()
@@ -105,7 +109,7 @@ def register(app: typer.Typer) -> None:
                 )
                 if not match:
                     raise UserError(
-                        f"Transición '{status}' no disponible",
+                        f"Transition '{status}' is not available",
                         payload={
                             "available": [t.get("name") for t in transitions],
                         },
@@ -123,7 +127,7 @@ def register(app: typer.Typer) -> None:
                 changes["description"] = "updated"
             elif desc_file:
                 if not desc_file.exists():
-                    raise UserError(f"Archivo no encontrado: {desc_file}")
+                    raise UserError(f"File not found: {desc_file}")
                 client.update_description(key, desc_file.read_text(encoding="utf-8"))
                 changes["description"] = f"updated from {desc_file}"
 
@@ -135,7 +139,7 @@ def register(app: typer.Typer) -> None:
                 attached: list[str] = []
                 for file_path in attach:
                     if not file_path.exists():
-                        raise UserError(f"Archivo no encontrado: {file_path}")
+                        raise UserError(f"File not found: {file_path}")
                     result = client.add_attachment(key, str(file_path))
                     attached.extend(a.get("filename", "?") for a in result)
                 changes["attachments"] = attached
@@ -150,17 +154,17 @@ def register(app: typer.Typer) -> None:
                 data,
                 as_json=json_out,
                 human_fn=lambda d: (
-                    print(f"OK: {d['key']} actualizado")
+                    print(f"OK: {d['key']} updated")
                     or [print(f"  {k}: {v}") for k, v in d["changes"].items()]
                 ),
             )
         except TjiraError as err:
             fail(err, as_json=json_out)
 
-    @issue_app.command("transitions", help="Listar transiciones disponibles de una issue")
+    @issue_app.command("transitions", help="List available transitions for an issue")
     def issue_transitions(
-        key: str = typer.Argument(..., help="Clave de la issue"),
-        json_out: bool = typer.Option(False, "--json", help="Output JSON a stdout"),
+        key: str = typer.Argument(..., help="Issue key"),
+        json_out: bool = typer.Option(False, "--json", help="JSON output to stdout"),
     ) -> None:
         try:
             client = JiraClient()
@@ -172,14 +176,14 @@ def register(app: typer.Typer) -> None:
 
 
 def _resolve_assignee(client: JiraClient, value: str) -> str:
-    """Convierte 'me' al accountId del usuario autenticado."""
+    """Resolve 'me' to the authenticated user's accountId."""
     if value.lower() == "me":
         try:
             me = client.get_myself()
         except APIError as exc:
-            raise UserError("No se pudo obtener tu accountId") from exc
+            raise UserError("Could not fetch your accountId") from exc
         account_id = me.get("accountId")
         if not account_id:
-            raise UserError("Tu usuario no expone accountId")
+            raise UserError("Your user does not expose an accountId")
         return account_id
     return value

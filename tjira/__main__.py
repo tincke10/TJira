@@ -1,4 +1,4 @@
-"""Permite ejecutar el CLI con `python -m tjira`."""
+"""Enables running the CLI via `python -m tjira`."""
 
 from tjira.cli import app
 

@@ -1,12 +1,12 @@
-"""Manejo de timezone configurable.
+"""Configurable timezone handling.
 
-La zona se resuelve en este orden:
-    1. Variable de entorno `JIRA_TIMEZONE` (ej: `America/Argentina/Buenos_Aires`)
-    2. Timezone local del sistema
-    3. UTC como último recurso
+The zone is resolved in this order:
+    1. `JIRA_TIMEZONE` environment variable (e.g. `America/Argentina/Buenos_Aires`)
+    2. System local timezone
+    3. UTC as a last resort
 
-Antes estaba hardcodeado en `+0100` (Europa/España), lo que rompía worklogs
-para cualquier usuario fuera de ese huso horario.
+Previously this was hardcoded to `+0100` (Europe/Spain), which broke worklogs
+for any user outside that timezone.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ except ImportError:
 
 
 def get_timezone():
-    """Devuelve el tzinfo configurado."""
+    """Return the configured tzinfo."""
     tz_name = os.getenv("JIRA_TIMEZONE")
     if tz_name and ZoneInfo is not None:
         try:
@@ -34,23 +34,24 @@ def get_timezone():
 
 
 def to_jira_datetime(dt: datetime) -> str:
-    """Convierte un datetime al formato ISO que Jira acepta para worklogs.
+    """Convert a datetime to the ISO format Jira expects for worklogs.
 
-    Formato: `YYYY-MM-DDTHH:MM:SS.000±HHMM`
+    Format: `YYYY-MM-DDTHH:MM:SS.000±HHMM`
     """
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=get_timezone())
-    # Jira exige milisegundos con 3 dígitos y offset sin `:`
+    # Jira requires 3-digit milliseconds and an offset without `:`.
     base = dt.strftime("%Y-%m-%dT%H:%M:%S")
     offset = dt.strftime("%z") or "+0000"
     return f"{base}.000{offset}"
 
 
 def parse_user_datetime(date_str: str) -> datetime:
-    """Parsea strings de fecha flexibles del usuario.
+    """Parse flexible user-supplied date strings.
 
-    Acepta: `YYYY-MM-DD HH:MM`, `YYYY-MM-DD`, `DD/MM/YYYY HH:MM`, `DD/MM/YYYY`.
-    Si no trae hora, asume 09:00. Si no trae tz, usa la configurada.
+    Accepts: `YYYY-MM-DD HH:MM`, `YYYY-MM-DD`, `DD/MM/YYYY HH:MM`, `DD/MM/YYYY`.
+    If no time is supplied, assumes 09:00. If no tz is supplied, uses the
+    configured one.
     """
     formats = [
         "%Y-%m-%d %H:%M",
@@ -67,4 +68,4 @@ def parse_user_datetime(date_str: str) -> datetime:
             dt = dt.replace(hour=9, minute=0)
         return dt.replace(tzinfo=get_timezone())
 
-    raise ValueError(f"Formato de fecha no reconocido: {date_str}")
+    raise ValueError(f"Unrecognized date format: {date_str}")

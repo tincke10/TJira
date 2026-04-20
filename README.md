@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="https://github.com/tincke10/JiraGestionREST/actions/workflows/ci.yml"><img src="https://github.com/tincke10/JiraGestionREST/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <img src="https://img.shields.io/badge/python-3.9%2B-blue?logo=python&logoColor=white" alt="Python 3.9+" />
+  <img src="https://img.shields.io/badge/python-3.13%2B-blue?logo=python&logoColor=white" alt="Python 3.13+" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/output-JSON-orange" alt="JSON output" />
   <img src="https://img.shields.io/badge/AI--ready-yes-blueviolet" alt="AI ready" />
@@ -70,7 +70,7 @@ tjira log PROJ-123 2h --comment "Implemented feature X"
 </tr>
 </table>
 
-> **Note:** editable installs require `pip >= 21.3` (PEP 660). Upgrade with `python -m pip install --upgrade pip` if needed.
+> **Note:** Requires Python 3.13 or newer. On macOS, `brew install python@3.14`. On Debian/Ubuntu, `apt install python3.14 python3.14-venv`. Then use `python3.14 -m pip install -e .` (or `pipx install .`).
 
 ## Configuration
 

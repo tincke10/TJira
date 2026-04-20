@@ -1,7 +1,7 @@
-"""Tests para `JiraClient` — HTTP mockeado con `responses`.
+"""Tests for `JiraClient` — HTTP mocked with `responses`.
 
-Valida que el cliente lanza APIError con payload estructurado en fallas y
-devuelve dicts/listas en éxitos. No hace red real.
+Validates that the client raises `APIError` with a structured payload on
+failures and returns dicts/lists on success. No real network calls.
 """
 
 from __future__ import annotations
@@ -14,9 +14,9 @@ from tjira.errors import APIError
 
 @pytest.fixture
 def client(configured_env):
-    """Instancia un JiraClient con env mockeado."""
-    # Import diferido: configured_env setea env vars antes de que `JiraClient`
-    # lea `JIRA_DOMAIN` al construirse.
+    """Instantiate a JiraClient with a mocked environment."""
+    # Deferred import: `configured_env` sets env vars before `JiraClient`
+    # reads `JIRA_DOMAIN` at construction time.
     from tjira.client import JiraClient
     return JiraClient()
 
@@ -55,7 +55,7 @@ def test_create_issue_posts_expected_payload(client):
     result = client.create_issue("PROJ", "New task", issue_type="Bug", description="body")
     assert result["key"] == "PROJ-42"
 
-    # Verificamos el body enviado
+    # Verify the body that was actually sent
     sent = responses.calls[0].request
     assert sent.method == "POST"
     body = sent.body
@@ -110,7 +110,7 @@ def test_transition_issue_sends_transition_id(client):
 
 @responses.activate
 def test_network_error_becomes_api_error(client):
-    # No registramos la URL → responses levanta ConnectionError
+    # We do not register the URL, so `responses` raises ConnectionError.
     with pytest.raises(APIError) as exc_info:
         client.get_issue("PROJ-1")
-    assert "Fallo de red" in exc_info.value.message
+    assert "Network failure" in exc_info.value.message

@@ -1,7 +1,7 @@
-"""Configuración centralizada del CLI.
+"""Centralized configuration for the CLI.
 
-Lee credenciales desde variables de entorno (o `.env` en cwd).
-Timezone se maneja en `tjira.tz`.
+Credentials are read from environment variables (or `.env` in cwd).
+Timezone handling lives in `tjira.tz`.
 """
 
 from __future__ import annotations
@@ -20,12 +20,12 @@ JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
 
 
 def validate_config() -> None:
-    """Verifica que las credenciales mínimas estén presentes.
+    """Verify that the minimum required credentials are present.
 
     Raises:
-        UserError: si falta alguna variable obligatoria. El payload incluye
-            el listado de variables faltantes para que el agente pueda
-            accionar sobre el error estructurado.
+        UserError: if any required variable is missing. The payload includes
+            the list of missing variables so an agent can act on the
+            structured error.
     """
     missing = [
         name
@@ -38,6 +38,6 @@ def validate_config() -> None:
     ]
     if missing:
         raise UserError(
-            f"Faltan variables de entorno: {', '.join(missing)}",
+            f"Missing environment variables: {', '.join(missing)}",
             payload={"missing": missing},
         )

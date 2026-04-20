@@ -1,18 +1,18 @@
-"""Subcomando `tjira doctor` — verificación de setup.
+"""`tjira doctor` subcommand — setup verification.
 
-Corre chequeos de configuración y conectividad, y reporta en formato humano o
-JSON. Útil para onboarding y para agentes (Claude, CI) que necesitan validar
-que el entorno está listo antes de ejecutar comandos de negocio.
+Runs configuration and connectivity checks, and reports them in human or JSON
+format. Useful for onboarding and for agents (Claude, CI) that need to
+validate the environment is ready before running business commands.
 
 Checks:
-    1. `.env` (o variables de entorno) con credenciales presentes
-    2. `JIRA_DOMAIN` con forma plausible (host, sin esquema)
-    3. `JIRA_TIMEZONE` es una zona IANA válida (si está seteada)
-    4. Llamada real a `GET /myself` para validar credenciales
+    1. `.env` (or environment variables) with credentials present
+    2. `JIRA_DOMAIN` with a plausible shape (host only, no scheme)
+    3. `JIRA_TIMEZONE` is a valid IANA zone (if set)
+    4. Live call to `GET /myself` to validate credentials
 
 Exit codes:
-    0 → todos los checks pasaron
-    1 → al menos un check no pasó (config o credenciales)
+    0 -> all checks passed
+    1 -> at least one check failed (config or credentials)
 """
 
 from __future__ import annotations
@@ -37,9 +37,9 @@ CheckResult = dict[str, Any]
 
 
 def register(app: typer.Typer) -> None:
-    @app.command("doctor", help="Verificar configuración, credenciales y conectividad")
+    @app.command("doctor", help="Verify configuration, credentials and connectivity")
     def doctor_cmd(
-        json_out: bool = typer.Option(False, "--json", help="Output JSON a stdout"),
+        json_out: bool = typer.Option(False, "--json", help="JSON output to stdout"),
     ) -> None:
         try:
             checks = _run_checks()
@@ -51,7 +51,7 @@ def register(app: typer.Typer) -> None:
             emit(data, as_json=json_out, human_fn=_print_human)
             if not data["all_passed"]:
                 raise UserError(
-                    "Uno o más checks fallaron",
+                    "One or more checks failed",
                     payload={"failed": [c["name"] for c in checks if not c["passed"]]},
                 )
         except TjiraError as err:
@@ -59,7 +59,7 @@ def register(app: typer.Typer) -> None:
 
 
 def _run_checks() -> list[CheckResult]:
-    """Ejecuta los checks de forma independiente; no aborta en el primer fallo."""
+    """Run the checks independently; never aborts on the first failure."""
     return [
         _check_env_vars(),
         _check_domain_shape(),
@@ -75,13 +75,13 @@ def _check_env_vars() -> CheckResult:
         return {
             "name": "env_vars",
             "passed": False,
-            "detail": f"Faltan variables: {', '.join(missing)}",
+            "detail": f"Missing variables: {', '.join(missing)}",
             "missing": missing,
         }
     return {
         "name": "env_vars",
         "passed": True,
-        "detail": "Todas las variables requeridas están presentes",
+        "detail": "All required variables are present",
     }
 
 
@@ -91,15 +91,15 @@ def _check_domain_shape() -> CheckResult:
         return {
             "name": "domain_shape",
             "passed": False,
-            "detail": "JIRA_DOMAIN no está seteado",
+            "detail": "JIRA_DOMAIN is not set",
         }
     if domain.startswith(("http://", "https://")) or domain.endswith("/"):
         return {
             "name": "domain_shape",
             "passed": False,
             "detail": (
-                "JIRA_DOMAIN debe ser solo el host, sin esquema ni slash final "
-                "(ej: 'your-company.atlassian.net')"
+                "JIRA_DOMAIN must be the host only, without scheme or trailing slash "
+                "(e.g. 'your-company.atlassian.net')"
             ),
             "value": domain,
         }
@@ -116,13 +116,13 @@ def _check_timezone() -> CheckResult:
         return {
             "name": "timezone",
             "passed": True,
-            "detail": "JIRA_TIMEZONE no seteado — se usará el timezone local del sistema",
+            "detail": "JIRA_TIMEZONE unset — the system local timezone will be used",
         }
     if ZoneInfo is None:
         return {
             "name": "timezone",
             "passed": False,
-            "detail": "zoneinfo no disponible en esta versión de Python",
+            "detail": "zoneinfo is not available in this Python version",
         }
     try:
         ZoneInfo(tz_name)
@@ -130,24 +130,24 @@ def _check_timezone() -> CheckResult:
         return {
             "name": "timezone",
             "passed": False,
-            "detail": f"Timezone IANA inválida: '{tz_name}'",
+            "detail": f"Invalid IANA timezone: '{tz_name}'",
             "value": tz_name,
         }
     return {
         "name": "timezone",
         "passed": True,
-        "detail": f"Timezone válida: {tz_name}",
+        "detail": f"Valid timezone: {tz_name}",
     }
 
 
 def _check_jira_connectivity() -> CheckResult:
-    # Import diferido: si faltan credenciales, `JiraClient()` explota al init.
+    # Deferred import: if credentials are missing, `JiraClient()` raises on init.
     missing = [n for n in ("JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN") if not os.getenv(n)]
     if missing:
         return {
             "name": "jira_connectivity",
             "passed": False,
-            "detail": "No se puede validar conectividad sin credenciales completas",
+            "detail": "Cannot validate connectivity without complete credentials",
             "skipped_due_to": missing,
         }
     try:
@@ -158,19 +158,19 @@ def _check_jira_connectivity() -> CheckResult:
         return {
             "name": "jira_connectivity",
             "passed": False,
-            "detail": f"API de Jira no respondió OK: {exc.message}",
+            "detail": f"Jira API did not respond OK: {exc.message}",
             **exc.payload,
         }
     except Exception as exc:  # pragma: no cover - defensive
         return {
             "name": "jira_connectivity",
             "passed": False,
-            "detail": f"Error inesperado contactando a Jira: {exc}",
+            "detail": f"Unexpected error contacting Jira: {exc}",
         }
     return {
         "name": "jira_connectivity",
         "passed": True,
-        "detail": f"Autenticado como {me.get('displayName')} ({me.get('emailAddress')})",
+        "detail": f"Authenticated as {me.get('displayName')} ({me.get('emailAddress')})",
         "account_id": me.get("accountId"),
     }
 
@@ -182,6 +182,6 @@ def _print_human(data: dict) -> None:
         print(f"  [{icon}] {check['name']:<20} {check['detail']}")
     print()
     if data["all_passed"]:
-        print("Todos los checks pasaron — tu setup está listo.")
+        print("All checks passed — your setup is ready.")
     else:
-        print("Uno o más checks fallaron. Revisá los detalles arriba.")
+        print("One or more checks failed. Review the details above.")

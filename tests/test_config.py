@@ -1,4 +1,4 @@
-"""Tests para la validación de configuración."""
+"""Tests for configuration validation."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from tjira.errors import UserError
 
 
 def _reload_config(monkeypatch: pytest.MonkeyPatch):
-    """Reimporta `tjira.config` para que tome las env vars seteadas por monkeypatch."""
-    # Evitamos que `load_dotenv` pise las env vars desde un `.env` real del host.
+    """Re-import `tjira.config` so it picks up env vars set by monkeypatch."""
+    # Prevent `load_dotenv` from overriding env vars from a real host `.env`.
     monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
     import tjira.config as cfg
     return importlib.reload(cfg)

@@ -1,7 +1,7 @@
-"""Smoke tests de la capa CLI con Typer's CliRunner.
+"""Smoke tests of the CLI layer using Typer's CliRunner.
 
-Foco: que todos los subcomandos se registren, acepten `--help`, y que
-`--json` + exit codes funcionen correctamente en happy paths y errores.
+Focus: that every subcommand registers, accepts `--help`, and that `--json`
+plus exit codes behave correctly on both happy paths and error paths.
 """
 
 from __future__ import annotations
@@ -15,12 +15,13 @@ from typer.testing import CliRunner
 
 @pytest.fixture
 def runner():
-    # mix_stderr=False nos deja separar stdout/stderr (contrato crítico del CLI).
-    return CliRunner(mix_stderr=False)
+    # In Click 8.2+ stdout and stderr are always captured separately — the
+    # former `mix_stderr=False` was removed because that is the implicit default.
+    return CliRunner()
 
 
 def _last_json_line(stream: str) -> dict:
-    """stderr puede tener logs de progreso seguidos del error JSON — agarramos el JSON."""
+    """stderr may contain progress logs followed by the error JSON — grab the JSON."""
     for line in reversed(stream.strip().splitlines()):
         line = line.strip()
         if line.startswith("{"):
@@ -30,7 +31,7 @@ def _last_json_line(stream: str) -> dict:
 
 @pytest.fixture
 def app(configured_env):
-    """App re-importada con env válido."""
+    """App re-imported with a valid env."""
     from tjira.cli import app
     return app
 
@@ -52,7 +53,7 @@ def test_version_flag(runner, app):
 
 
 def test_no_args_shows_help(runner, app):
-    """Sin subcomando, Typer imprime help (con `no_args_is_help=True`)."""
+    """With no subcommand, Typer prints help (via `no_args_is_help=True`)."""
     result = runner.invoke(app, [])
     assert "Usage" in result.stdout or "Commands" in result.stdout
 
@@ -76,18 +77,18 @@ def test_doctor_all_checks_pass(runner, app):
 
 @responses.activate
 def test_doctor_reports_invalid_domain_shape(runner, monkeypatch, app):
-    # Pisamos el env con un valor inválido y reimportamos el comando.
+    # Override env with an invalid value and re-import the command.
     monkeypatch.setenv("JIRA_DOMAIN", "https://example.atlassian.net/")
     import importlib
     import tjira.cli as cli_mod
     importlib.reload(cli_mod)
 
     responses.get(
-        "https://https://example.atlassian.net//rest/api/3/myself",  # URL rota a propósito
+        "https://https://example.atlassian.net//rest/api/3/myself",  # deliberately broken URL
         status=500,
     )
     result = runner.invoke(cli_mod.app, ["doctor", "--json"])
-    # Falla porque domain_shape no pasa
+    # Fails because domain_shape does not pass
     assert result.exit_code == 1
     envelope = json.loads(result.stdout)
     assert envelope["data"]["all_passed"] is False
@@ -96,7 +97,7 @@ def test_doctor_reports_invalid_domain_shape(runner, monkeypatch, app):
 
 
 def test_doctor_fails_when_env_missing(runner, monkeypatch):
-    # Sin `configured_env` fixture — env vacío (autouse lo limpió).
+    # No `configured_env` fixture — env is empty (autouse fixture cleaned it).
     import importlib
     import tjira.cli as cli_mod
     importlib.reload(cli_mod)
@@ -228,8 +229,8 @@ def test_worklog_import_dry_run_no_http(runner, app, tmp_path):
         "PROJ-2,1h,2026-04-20T10:00:00.000+0000\n",
         encoding="utf-8",
     )
-    # Sin `@responses.activate` → si hiciera HTTP real, el test flakearia.
-    # En dry-run el cliente ni se construye.
+    # Without `@responses.activate`, any real HTTP would make the test flaky.
+    # In dry-run the client is never constructed.
     result = runner.invoke(app, ["worklog", "import", str(csv), "--dry-run", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)["data"]

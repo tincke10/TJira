@@ -1,4 +1,4 @@
-"""Tests para tipos de error y el helper `fail`."""
+"""Tests for error types and the `fail` helper."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_fail_json_writes_envelope_to_stderr(capsys: pytest.CaptureFixture[str])
     assert exc_info.value.code == 1
 
     captured = capsys.readouterr()
-    assert captured.out == ""  # stdout no se contamina
+    assert captured.out == ""  # stdout is not polluted
     envelope = json.loads(captured.err)
     assert envelope == {"ok": False, "error": "missing env", "missing": ["JIRA_DOMAIN"]}
 

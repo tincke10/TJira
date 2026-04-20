@@ -1,4 +1,4 @@
-"""Subcomando `tjira worklog` — bulk import/delete desde CSV."""
+"""`tjira worklog` subcommand — bulk import/delete from CSV."""
 
 from __future__ import annotations
 
@@ -13,23 +13,23 @@ from tjira.formatters import emit, log
 
 
 def register(app: typer.Typer) -> None:
-    worklog_app = typer.Typer(help="Bulk import/delete de worklogs desde CSV")
+    worklog_app = typer.Typer(help="Bulk import/delete worklogs from CSV")
     app.add_typer(worklog_app, name="worklog")
 
-    @worklog_app.command("import", help="Importar worklogs desde un CSV")
+    @worklog_app.command("import", help="Import worklogs from a CSV file")
     def worklog_import(
-        csv_file: Path = typer.Argument(..., help="Archivo CSV con los worklogs"),
-        dry_run: bool = typer.Option(False, "--dry-run", help="Simular sin ejecutar"),
-        json_out: bool = typer.Option(False, "--json", help="Output JSON a stdout"),
+        csv_file: Path = typer.Argument(..., help="CSV file with the worklogs"),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Simulate without executing"),
+        json_out: bool = typer.Option(False, "--json", help="JSON output to stdout"),
     ) -> None:
         try:
             if not csv_file.exists():
-                raise UserError(f"Archivo CSV no encontrado: {csv_file}")
+                raise UserError(f"CSV file not found: {csv_file}")
 
             client = None if dry_run else JiraClient()
-            log(f"Importando worklogs desde: {csv_file}")
+            log(f"Importing worklogs from: {csv_file}")
             if dry_run:
-                log("MODO DRY-RUN: no se realizarán cambios")
+                log("DRY-RUN MODE: no changes will be made")
 
             success: list[dict] = []
             errors: list[dict] = []
@@ -40,7 +40,7 @@ def register(app: typer.Typer) -> None:
                 missing = required - set(reader.fieldnames or [])
                 if missing:
                     raise UserError(
-                        f"CSV sin columnas obligatorias: {', '.join(sorted(missing))}",
+                        f"CSV is missing required columns: {', '.join(sorted(missing))}",
                         payload={"missing_columns": sorted(missing)},
                     )
 
@@ -79,9 +79,9 @@ def register(app: typer.Typer) -> None:
             }
 
             def _human(d: dict) -> None:
-                print(f"RESUMEN: {d['success_count']} exitosos, {d['error_count']} errores")
+                print(f"SUMMARY: {d['success_count']} succeeded, {d['error_count']} failed")
                 if d["errors"]:
-                    print("\nErrores:")
+                    print("\nErrors:")
                     for e in d["errors"]:
                         print(f"  - {e.get('issue')}: {e.get('error')}")
 
@@ -89,28 +89,28 @@ def register(app: typer.Typer) -> None:
         except TjiraError as err:
             fail(err, as_json=json_out)
 
-    @worklog_app.command("delete", help="Eliminar todos los worklogs de las issues listadas en un CSV")
+    @worklog_app.command("delete", help="Delete every worklog for the issues listed in a CSV")
     def worklog_delete(
-        csv_file: Path = typer.Argument(..., help="Archivo CSV con las issues"),
-        dry_run: bool = typer.Option(False, "--dry-run", help="Simular sin ejecutar"),
-        json_out: bool = typer.Option(False, "--json", help="Output JSON a stdout"),
+        csv_file: Path = typer.Argument(..., help="CSV file with the issue keys"),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Simulate without executing"),
+        json_out: bool = typer.Option(False, "--json", help="JSON output to stdout"),
     ) -> None:
         try:
             if not csv_file.exists():
-                raise UserError(f"Archivo CSV no encontrado: {csv_file}")
+                raise UserError(f"CSV file not found: {csv_file}")
 
             issues: set[str] = set()
             with csv_file.open("r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 if "Jira Key" not in (reader.fieldnames or []):
-                    raise UserError("CSV sin columna 'Jira Key'")
+                    raise UserError("CSV is missing the 'Jira Key' column")
                 for row in reader:
                     issues.add(row["Jira Key"])
 
             client = JiraClient()
-            log(f"Eliminando worklogs de {len(issues)} issues")
+            log(f"Deleting worklogs for {len(issues)} issues")
             if dry_run:
-                log("MODO DRY-RUN: no se realizarán cambios")
+                log("DRY-RUN MODE: no changes will be made")
 
             deleted: list[dict] = []
             errors: list[dict] = []
@@ -123,7 +123,7 @@ def register(app: typer.Typer) -> None:
                     continue
 
                 if not worklogs:
-                    log(f"  {issue_key}: sin worklogs")
+                    log(f"  {issue_key}: no worklogs")
                     continue
 
                 log(f"  {issue_key}: {len(worklogs)} worklog(s)")
@@ -154,9 +154,9 @@ def register(app: typer.Typer) -> None:
             }
 
             def _human(d: dict) -> None:
-                print(f"RESUMEN: {d['deleted_count']} eliminados, {d['error_count']} errores")
+                print(f"SUMMARY: {d['deleted_count']} deleted, {d['error_count']} failed")
                 if d["errors"]:
-                    print("\nErrores:")
+                    print("\nErrors:")
                     for e in d["errors"]:
                         print(f"  - {e.get('issue')}/{e.get('worklog_id')}: {e.get('error')}")
 

@@ -1,12 +1,12 @@
-"""Formateadores dual: human (tabla/plano) vs JSON estructurado.
+"""Dual formatters: human (table/plain text) vs structured JSON.
 
-Regla de oro:
-    - stdout = data (humano o JSON) → parseable
-    - stderr = progreso/logs → no contamina el output
+Golden rule:
+    - stdout = data (human or JSON) -> parseable
+    - stderr = progress/logs -> never pollutes output
 
-Los formateadores JSON devuelven estructuras estables y documentadas,
-pensadas para que un agente (Claude, GPT, script) las consuma de forma
-confiable. Los formateadores humanos son best-effort para terminal.
+The JSON formatters return stable, documented structures so an agent (Claude,
+GPT, any script) can consume them reliably. The human formatters are
+best-effort for terminal display.
 """
 
 from __future__ import annotations
@@ -17,12 +17,12 @@ from typing import Any, Iterable
 
 
 def emit(data: Any, *, as_json: bool, human_fn=None) -> None:
-    """Imprime a stdout en el formato pedido.
+    """Print to stdout in the requested format.
 
     Args:
-        data: Estructura ya normalizada lista para serializar como JSON.
-        as_json: Si True, imprime JSON; si False, invoca `human_fn(data)`.
-        human_fn: Callable que recibe `data` y imprime la versión humana.
+        data: Already-normalized structure ready to serialize as JSON.
+        as_json: If True, print JSON; if False, invoke `human_fn(data)`.
+        human_fn: Callable that receives `data` and prints the human version.
     """
     if as_json:
         print(json.dumps({"ok": True, "data": data}, ensure_ascii=False, indent=2))
@@ -34,15 +34,15 @@ def emit(data: Any, *, as_json: bool, human_fn=None) -> None:
 
 
 def log(message: str) -> None:
-    """Mensaje de progreso a stderr (nunca contamina stdout)."""
+    """Progress message on stderr (never pollutes stdout)."""
     print(message, file=sys.stderr)
 
 
-# ==================== NORMALIZADORES ====================
-# Convierten respuestas crudas de Jira en dicts/listas estables.
+# ==================== NORMALIZERS ====================
+# Convert raw Jira responses into stable dicts/lists.
 
 def normalize_issue(issue: dict) -> dict:
-    """Aplana una issue de Jira a un dict predecible."""
+    """Flatten a Jira issue into a predictable dict."""
     fields = issue.get("fields", {}) or {}
     assignee = fields.get("assignee") or {}
     status = fields.get("status") or {}
@@ -70,7 +70,7 @@ def normalize_issue(issue: dict) -> dict:
 
 
 def normalize_worklog(worklog: dict) -> dict:
-    """Aplana un worklog a un dict predecible."""
+    """Flatten a worklog into a predictable dict."""
     author = worklog.get("author") or {}
     return {
         "id": worklog.get("id"),
@@ -122,7 +122,7 @@ def normalize_transition(transition: dict) -> dict:
 
 
 def _extract_adf_text(adf: dict | None) -> str | None:
-    """Extrae texto plano de un documento ADF (Atlassian Document Format)."""
+    """Extract plain text from an ADF (Atlassian Document Format) document."""
     if not adf or not isinstance(adf, dict):
         return None
     chunks: list[str] = []
@@ -140,34 +140,34 @@ def _extract_adf_text(adf: dict | None) -> str | None:
 def print_issues_table(issues: Iterable[dict]) -> None:
     issues = list(issues)
     if not issues:
-        print("No se encontraron tareas")
+        print("No issues found")
         return
-    print(f"{'KEY':<15} {'TIPO':<10} {'ESTADO':<15} {'TITULO'}")
+    print(f"{'KEY':<15} {'TYPE':<10} {'STATUS':<15} {'SUMMARY'}")
     print("-" * 80)
     for it in issues:
         key = (it.get("key") or "-")[:15]
-        tipo = (it.get("type") or "-")[:10]
-        estado = (it.get("status") or "-")[:15]
-        titulo = (it.get("summary") or "-")[:45]
-        print(f"{key:<15} {tipo:<10} {estado:<15} {titulo}")
-    print(f"\nTotal: {len(issues)} tareas")
+        type_ = (it.get("type") or "-")[:10]
+        status = (it.get("status") or "-")[:15]
+        summary = (it.get("summary") or "-")[:45]
+        print(f"{key:<15} {type_:<10} {status:<15} {summary}")
+    print(f"\nTotal: {len(issues)} issues")
 
 
 def print_issue_detail(issue: dict) -> None:
     print(f"Issue: {issue.get('key')}")
-    print(f"  Titulo: {issue.get('summary')}")
-    print(f"  Tipo: {issue.get('type')}")
-    print(f"  Estado: {issue.get('status')}")
+    print(f"  Summary: {issue.get('summary')}")
+    print(f"  Type: {issue.get('type')}")
+    print(f"  Status: {issue.get('status')}")
     assignee = issue.get("assignee")
-    print(f"  Asignado: {assignee['display_name'] if assignee else 'Sin asignar'}")
+    print(f"  Assignee: {assignee['display_name'] if assignee else 'Unassigned'}")
     desc = issue.get("description")
     if desc:
-        print("  Descripcion:")
+        print("  Description:")
         for line in desc.splitlines():
             print(f"    {line}")
     attachments = issue.get("attachments") or []
     if attachments:
-        print(f"  Adjuntos ({len(attachments)}):")
+        print(f"  Attachments ({len(attachments)}):")
         for a in attachments:
             size_kb = (a.get("size") or 0) // 1024
             print(f"    - {a.get('filename')} ({size_kb}KB)")
@@ -176,9 +176,9 @@ def print_issue_detail(issue: dict) -> None:
 def print_boards_table(boards: Iterable[dict]) -> None:
     boards = list(boards)
     if not boards:
-        print("No se encontraron boards")
+        print("No boards found")
         return
-    print(f"{'ID':<8} {'TIPO':<10} {'NOMBRE'}")
+    print(f"{'ID':<8} {'TYPE':<10} {'NAME'}")
     print("-" * 60)
     for b in boards:
         print(f"{str(b.get('id') or '-'):<8} {(b.get('type') or '-'):<10} {b.get('name') or '-'}")
@@ -188,9 +188,9 @@ def print_boards_table(boards: Iterable[dict]) -> None:
 def print_sprints_table(sprints: Iterable[dict]) -> None:
     sprints = list(sprints)
     if not sprints:
-        print("No se encontraron sprints")
+        print("No sprints found")
         return
-    print(f"{'ID':<8} {'ESTADO':<10} {'NOMBRE'}")
+    print(f"{'ID':<8} {'STATE':<10} {'NAME'}")
     print("-" * 60)
     for s in sprints:
         print(f"{str(s.get('id') or '-'):<8} {(s.get('state') or '-'):<10} {s.get('name') or '-'}")
@@ -200,23 +200,23 @@ def print_sprints_table(sprints: Iterable[dict]) -> None:
 def print_filters_table(filters_: Iterable[dict]) -> None:
     filters_ = list(filters_)
     if not filters_:
-        print("No se encontraron filtros")
+        print("No filters found")
         return
-    print(f"{'ID':<8} {'NOMBRE':<35} {'JQL'}")
+    print(f"{'ID':<8} {'NAME':<35} {'JQL'}")
     print("-" * 100)
     for f in filters_:
         name = (f.get("name") or "-")[:35]
         jql = (f.get("jql") or "-")[:50]
         print(f"{str(f.get('id') or '-'):<8} {name:<35} {jql}")
-    print(f"\nTotal: {len(filters_)} filtros")
+    print(f"\nTotal: {len(filters_)} filters")
 
 
 def print_transitions_table(transitions: Iterable[dict]) -> None:
     transitions = list(transitions)
     if not transitions:
-        print("No hay transiciones disponibles")
+        print("No transitions available")
         return
-    print("Transiciones disponibles:")
+    print("Available transitions:")
     for t in transitions:
         to = t.get("to") or "-"
         print(f"  [{t.get('id')}] {t.get('name')} -> {to}")

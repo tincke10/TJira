@@ -1,4 +1,4 @@
-"""Tests para normalizadores y emit (contrato JSON estable)."""
+"""Tests for normalizers and `emit` (stable JSON contract)."""
 
 from __future__ import annotations
 

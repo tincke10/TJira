@@ -1,8 +1,9 @@
-"""Fixtures compartidas para tests de tjira.
+"""Shared fixtures for tjira tests.
 
-`tjira.config` lee variables al importarse vía `load_dotenv()` — si el dev
-tiene un `.env` real en cwd, los tests heredan esas credenciales. Forzamos un
-entorno determinístico acá para que los tests no dependan del host.
+`tjira.config` reads environment variables at import time via `load_dotenv()` —
+if a developer has a real `.env` in cwd, tests would inherit those
+credentials. We force a deterministic environment here so tests do not depend
+on the host.
 """
 
 from __future__ import annotations
@@ -14,11 +15,11 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Aísla las variables JIRA_* por default; los tests que las necesiten las setean."""
+    """Isolate JIRA_* variables by default; tests that need them set them explicitly."""
     for key in ("JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN", "JIRA_TIMEZONE", "JIRA_TIMEOUT"):
         monkeypatch.delenv(key, raising=False)
 
-    # Purgamos módulos que cachean env en import-time para que el monkeypatch aplique.
+    # Drop modules that cache env at import-time so the monkeypatch actually applies.
     for mod in [
         "tjira.config",
         "tjira.client",
@@ -34,7 +35,7 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def configured_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Entorno Jira válido para los tests que corren con credenciales puestas."""
+    """Valid Jira environment for tests that run with credentials set."""
     monkeypatch.setenv("JIRA_DOMAIN", "example.atlassian.net")
     monkeypatch.setenv("JIRA_EMAIL", "test@example.com")
     monkeypatch.setenv("JIRA_API_TOKEN", "test-token")

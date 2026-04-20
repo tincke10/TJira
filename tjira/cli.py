@@ -1,13 +1,13 @@
-"""Entry point principal del CLI `tjira`.
+"""Main entry point for the `tjira` CLI.
 
-Convenciones de output:
-    - stdout = data (humano o JSON según --json)
-    - stderr = progreso/logs/errores
+Output conventions:
+    - stdout = data (human-readable or JSON, depending on --json)
+    - stderr = progress/logs/errors
 
 Exit codes:
-    0 → OK
-    1 → Error de usuario (args, archivo, config)
-    2 → Error de API de Jira (4xx/5xx, red, timeout)
+    0 -> OK
+    1 -> User error (args, file not found, missing config)
+    2 -> Jira API error (4xx/5xx, network, timeout)
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from tjira.commands import worklog as worklog_cmd
 
 app = typer.Typer(
     name="tjira",
-    help="CLI unificado para gestionar Jira via REST con output JSON AI-friendly.",
+    help="Unified CLI to manage Jira via REST, with AI-friendly JSON output.",
     add_completion=True,
     no_args_is_help=True,
 )
@@ -41,15 +41,15 @@ def main(
         False,
         "--version",
         "-V",
-        help="Mostrar versión y salir",
+        help="Show version and exit",
         callback=_version_callback,
         is_eager=True,
     ),
 ) -> None:
-    """Raíz del CLI — ver subcomandos con `tjira --help`."""
+    """CLI root — run `tjira --help` to list subcommands."""
 
 
-# Registrar subcomandos
+# Register subcommands
 log_cmd.register(app)
 issue_cmd.register(app)
 list_cmd.register(app)

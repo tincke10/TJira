@@ -1,9 +1,9 @@
-"""Exit codes y excepciones tipadas para tjira.
+"""Exit codes and typed exceptions for tjira.
 
-Convenciones:
-    0 → OK
-    1 → Error de usuario (args inválidos, archivo no encontrado, config faltante)
-    2 → Error de API de Jira (4xx/5xx, red, timeout)
+Conventions:
+    0 -> OK
+    1 -> User error (invalid args, file not found, missing config)
+    2 -> Jira API error (4xx/5xx, network, timeout)
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ EXIT_API_ERROR = 2
 
 
 class TjiraError(Exception):
-    """Excepción base del CLI. Lleva exit_code y payload opcional."""
+    """Base CLI exception. Carries exit_code and optional payload."""
 
     exit_code: int = EXIT_USER_ERROR
 
@@ -29,22 +29,22 @@ class TjiraError(Exception):
 
 
 class UserError(TjiraError):
-    """Argumentos inválidos, archivo no encontrado, config incompleta."""
+    """Invalid arguments, missing file, incomplete configuration."""
 
     exit_code = EXIT_USER_ERROR
 
 
 class APIError(TjiraError):
-    """La API de Jira respondió con error o no se pudo contactar."""
+    """Jira API returned an error or could not be reached."""
 
     exit_code = EXIT_API_ERROR
 
 
 def fail(err: TjiraError, *, as_json: bool) -> None:
-    """Emite el error por stderr y sale con el exit code correspondiente.
+    """Emit the error on stderr and exit with the proper exit code.
 
-    En modo JSON, stderr recibe un objeto `{"error": ..., "detail": ...}`.
-    En modo humano, un mensaje plano con prefijo `Error:`.
+    In JSON mode, stderr receives an object `{"error": ..., "detail": ...}`.
+    In human mode, a plain message prefixed with `Error:`.
     """
     if as_json:
         envelope = {"ok": False, "error": err.message, **err.payload}

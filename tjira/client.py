@@ -1,9 +1,10 @@
-"""Cliente Jira mejorado — wrappea `requests` y levanta `APIError` en fallos.
+"""Improved Jira client — wraps `requests` and raises `APIError` on failures.
 
-Diferencias con `jira_client.py` (legacy, se mantiene por compatibilidad):
-    - Lanza `APIError` con payload estructurado en vez de devolver `None` o `False`.
-    - Timeout configurable vía `JIRA_TIMEOUT` (default 30s).
-    - Single entry point por método, en vez de tuplas `(ok, result)`.
+Differences from `jira_client.py` (legacy, kept for backwards compatibility):
+    - Raises `APIError` with a structured payload instead of returning `None`
+      or `False`.
+    - Configurable timeout via `JIRA_TIMEOUT` (default 30s).
+    - Single entry point per method, instead of `(ok, result)` tuples.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ DEFAULT_TIMEOUT = float(os.getenv("JIRA_TIMEOUT", "30"))
 
 
 class JiraClient:
-    """Cliente para la API REST de Jira Cloud."""
+    """Client for the Jira Cloud REST API."""
 
     def __init__(self) -> None:
         validate_config()
@@ -64,13 +65,13 @@ class JiraClient:
             )
         except requests.RequestException as exc:
             raise APIError(
-                f"Fallo de red al llamar a Jira: {exc}",
+                f"Network failure calling Jira: {exc}",
                 payload={"endpoint": endpoint, "method": method},
             ) from exc
 
         if response.status_code not in expected:
             raise APIError(
-                f"Jira respondió {response.status_code} en {method} {endpoint}",
+                f"Jira returned {response.status_code} on {method} {endpoint}",
                 payload={
                     "endpoint": endpoint,
                     "method": method,
@@ -157,8 +158,8 @@ class JiraClient:
     # ==================== SEARCH ====================
 
     def search_issues(self, jql: str, max_results: int = 50) -> list[dict]:
-        # Jira Cloud deprecó /rest/api/3/search (410 Gone). Endpoint actual:
-        # POST /rest/api/3/search/jql — paginado con nextPageToken, sin `total`.
+        # Jira Cloud deprecated /rest/api/3/search (410 Gone). Current endpoint:
+        # POST /rest/api/3/search/jql — paginated via nextPageToken, no `total`.
         payload = {
             "jql": jql,
             "maxResults": max_results,
@@ -259,7 +260,7 @@ class JiraClient:
     def add_attachment(self, issue_key: str, file_path: str) -> list[dict]:
         if not os.path.exists(file_path):
             raise APIError(
-                f"Archivo no encontrado: {file_path}",
+                f"File not found: {file_path}",
                 payload={"file": file_path},
             )
         url = f"{self.base_url}/issue/{issue_key}/attachments"
@@ -271,10 +272,10 @@ class JiraClient:
                     url, headers=headers, auth=self.auth, files=files, timeout=DEFAULT_TIMEOUT
                 )
         except requests.RequestException as exc:
-            raise APIError(f"Fallo de red subiendo adjunto: {exc}") from exc
+            raise APIError(f"Network failure uploading attachment: {exc}") from exc
         if response.status_code != 200:
             raise APIError(
-                f"Jira respondió {response.status_code} al adjuntar",
+                f"Jira returned {response.status_code} while attaching file",
                 payload={"status": response.status_code, "body": _safe_body(response)},
             )
         return response.json()
@@ -294,7 +295,7 @@ class JiraClient:
 # ==================== helpers ====================
 
 def _plain_to_adf(text: str) -> dict:
-    """Envuelve texto plano en el formato ADF mínimo que Jira acepta."""
+    """Wrap plain text in the minimal ADF document format Jira accepts."""
     return {
         "type": "doc",
         "version": 1,

@@ -1,5 +1,12 @@
+LICENSE
 README.md
 pyproject.toml
+tests/test_cli.py
+tests/test_client.py
+tests/test_config.py
+tests/test_errors.py
+tests/test_formatters.py
+tests/test_tz.py
 tjira/__init__.py
 tjira/__main__.py
 tjira/cli.py
@@ -15,6 +22,7 @@ tjira.egg-info/entry_points.txt
 tjira.egg-info/requires.txt
 tjira.egg-info/top_level.txt
 tjira/commands/__init__.py
+tjira/commands/doctor.py
 tjira/commands/issue.py
 tjira/commands/list_cmd.py
 tjira/commands/log.py
