@@ -1,5 +1,6 @@
 """Cliente de Jira API - Clase reutilizable para todas las operaciones."""
 
+import os
 import requests
 from requests.auth import HTTPBasicAuth
 from typing import Optional
@@ -12,6 +13,7 @@ class JiraClient:
     def __init__(self):
         validate_config()
         self.base_url = f"https://{JIRA_DOMAIN}/rest/api/3"
+        self.agile_url = f"https://{JIRA_DOMAIN}/rest/agile/1.0"
         self.auth = HTTPBasicAuth(JIRA_EMAIL, JIRA_API_TOKEN)
         self.headers = {
             "Accept": "application/json",
@@ -27,6 +29,18 @@ class JiraClient:
             headers=self.headers,
             auth=self.auth,
             json=data
+        )
+
+    def _request_agile(self, method: str, endpoint: str, data: dict = None, params: dict = None) -> requests.Response:
+        """Realiza una petición a la API Agile de Jira."""
+        url = f"{self.agile_url}/{endpoint}"
+        return requests.request(
+            method=method,
+            url=url,
+            headers=self.headers,
+            auth=self.auth,
+            json=data,
+            params=params
         )
 
     # ==================== ISSUES ====================
@@ -236,3 +250,232 @@ class JiraClient:
         if response.status_code == 200:
             return response.json()
         return None
+
+    # ==================== BOARDS (AGILE) ====================
+
+    def get_boards(self, project_key: str = None, board_type: str = None) -> list:
+        """
+        Lista los boards de Jira (Scrum/Kanban).
+
+        Args:
+            project_key: Filtrar por proyecto (opcional)
+            board_type: Filtrar por tipo: 'scrum', 'kanban' (opcional)
+
+        Returns:
+            Lista de boards
+        """
+        params = {}
+        if project_key:
+            params["projectKeyOrId"] = project_key
+        if board_type:
+            params["type"] = board_type
+
+        response = self._request_agile("GET", "board", params=params)
+        if response.status_code == 200:
+            return response.json().get("values", [])
+        return []
+
+    def get_board_issues(self, board_id: int, max_results: int = 50, jql: str = None) -> list:
+        """
+        Obtiene las issues de un board.
+
+        Args:
+            board_id: ID del board
+            max_results: Máximo de resultados
+            jql: Filtro JQL adicional (opcional)
+
+        Returns:
+            Lista de issues
+        """
+        params = {"maxResults": max_results}
+        if jql:
+            params["jql"] = jql
+
+        response = self._request_agile("GET", f"board/{board_id}/issue", params=params)
+        if response.status_code == 200:
+            return response.json().get("issues", [])
+        return []
+
+    def get_board_sprints(self, board_id: int, state: str = "active") -> list:
+        """
+        Obtiene los sprints de un board.
+
+        Args:
+            board_id: ID del board
+            state: Estado del sprint: 'active', 'closed', 'future'
+
+        Returns:
+            Lista de sprints
+        """
+        params = {"state": state}
+        response = self._request_agile("GET", f"board/{board_id}/sprint", params=params)
+        if response.status_code == 200:
+            return response.json().get("values", [])
+        return []
+
+    def get_sprint_issues(self, sprint_id: int, max_results: int = 50) -> list:
+        """Obtiene las issues de un sprint."""
+        params = {"maxResults": max_results}
+        response = self._request_agile("GET", f"sprint/{sprint_id}/issue", params=params)
+        if response.status_code == 200:
+            return response.json().get("issues", [])
+        return []
+
+    # ==================== FILTROS ====================
+
+    def get_filters(self, filter_name: str = None) -> list:
+        """
+        Busca filtros guardados.
+
+        Args:
+            filter_name: Nombre del filtro a buscar (opcional)
+
+        Returns:
+            Lista de filtros
+        """
+        params = {"expand": "jql"}
+        if filter_name:
+            params["filterName"] = filter_name
+
+        response = self._request("GET", f"filter/search?{'&'.join(f'{k}={v}' for k, v in params.items())}")
+        if response.status_code == 200:
+            return response.json().get("values", [])
+        return []
+
+    def get_filter(self, filter_id: int) -> Optional[dict]:
+        """Obtiene un filtro por ID (incluye el JQL)."""
+        response = self._request("GET", f"filter/{filter_id}")
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    def get_filter_issues(self, filter_id: int, max_results: int = 50) -> list:
+        """Obtiene las issues de un filtro ejecutando su JQL."""
+        filter_data = self.get_filter(filter_id)
+        if filter_data and "jql" in filter_data:
+            return self.search_issues(filter_data["jql"], max_results)
+        return []
+
+    # ==================== DASHBOARDS ====================
+
+    def get_dashboards(self, filter_name: str = None) -> list:
+        """
+        Lista los dashboards disponibles.
+
+        Args:
+            filter_name: Filtrar por nombre (opcional)
+
+        Returns:
+            Lista de dashboards
+        """
+        params = ""
+        if filter_name:
+            params = f"?filter={filter_name}"
+
+        response = self._request("GET", f"dashboard{params}")
+        if response.status_code == 200:
+            return response.json().get("dashboards", [])
+        return []
+
+    # ==================== ATTACHMENTS ====================
+
+    def add_attachment(self, issue_key: str, file_path: str) -> tuple[bool, dict]:
+        """
+        Adjunta un archivo a una issue.
+
+        Args:
+            issue_key: Clave de la issue (ej: "TGFDEV-123")
+            file_path: Ruta al archivo a adjuntar
+
+        Returns:
+            Tupla (éxito, respuesta/error)
+        """
+        if not os.path.exists(file_path):
+            return False, {"error": f"Archivo no encontrado: {file_path}"}
+
+        url = f"{self.base_url}/issue/{issue_key}/attachments"
+        headers = {
+            "Accept": "application/json",
+            "X-Atlassian-Token": "no-check"
+        }
+
+        with open(file_path, "rb") as f:
+            files = {"file": (os.path.basename(file_path), f)}
+            response = requests.post(
+                url,
+                headers=headers,
+                auth=self.auth,
+                files=files
+            )
+
+        if response.status_code == 200:
+            return True, response.json()
+        return False, {"error": response.text, "status": response.status_code}
+
+    # ==================== DESCRIPCIÓN ====================
+
+    def update_description(self, issue_key: str, description: str) -> tuple[bool, str]:
+        """
+        Actualiza la descripción de una issue con texto plano.
+
+        Args:
+            issue_key: Clave de la issue
+            description: Texto de la descripción
+
+        Returns:
+            Tupla (éxito, mensaje)
+        """
+        fields = {
+            "description": {
+                "type": "doc",
+                "version": 1,
+                "content": [{
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": description}]
+                }]
+            }
+        }
+        return self.update_issue(issue_key, fields)
+
+    def update_description_adf(self, issue_key: str, adf_content: dict) -> tuple[bool, str]:
+        """
+        Actualiza la descripción con contenido ADF (Atlassian Document Format).
+
+        Args:
+            issue_key: Clave de la issue
+            adf_content: Contenido en formato ADF
+
+        Returns:
+            Tupla (éxito, mensaje)
+        """
+        fields = {"description": adf_content}
+        return self.update_issue(issue_key, fields)
+
+    # ==================== COMENTARIOS ====================
+
+    def add_comment(self, issue_key: str, body: str) -> tuple[bool, dict]:
+        """
+        Añade un comentario a una issue.
+
+        Args:
+            issue_key: Clave de la issue
+            body: Texto del comentario
+
+        Returns:
+            Tupla (éxito, respuesta/error)
+        """
+        payload = {
+            "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [{
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": body}]
+                }]
+            }
+        }
+        response = self._request("POST", f"issue/{issue_key}/comment", payload)
+
+        if response.status_code == 201:
+            return True, response.json()
+        return False, {"error": response.text, "status": response.status_code}
