@@ -1,0 +1,22 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>tjira icon</title>
+  <desc>Ícono de tijera en azul Jira</desc>
+
+  <!-- Cuchilla 2: azul medio -->
+  <g stroke-linejoin="round">
+    <line x1="336" y1="390" x2="256" y2="264" stroke="#2684FF" stroke-width="24" stroke-linecap="round"/>
+    <polygon points="267,259 245,271 170,110" fill="#2684FF"/>
+    <circle cx="336" cy="390" r="52" fill="none" stroke="#2684FF" stroke-width="24"/>
+  </g>
+
+  <!-- Cuchilla 1: azul oscuro -->
+  <g stroke-linejoin="round">
+    <line x1="176" y1="390" x2="256" y2="264" stroke="#0052CC" stroke-width="24" stroke-linecap="round"/>
+    <polygon points="267,271 245,259 342,110" fill="#0052CC"/>
+    <circle cx="176" cy="390" r="52" fill="none" stroke="#0052CC" stroke-width="24"/>
+  </g>
+
+  <!-- Pivote -->
+  <circle cx="256" cy="264" r="10" fill="#172B4D"/>
+  <circle cx="256" cy="264" r="3.5" fill="#DEEBFF"/>
+</svg>

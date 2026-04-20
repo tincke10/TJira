@@ -1,4 +1,4 @@
-"""Subcomando `tjira-cli issue` — create / update / get / transition."""
+"""Subcomando `tjira issue` — create / update / get / transition."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import List, Optional
 
 import typer
 
-from tjira_cli.client import JiraClient
-from tjira_cli.errors import APIError, TjiraError, UserError, fail
-from tjira_cli.formatters import (
+from tjira.client import JiraClient
+from tjira.errors import APIError, TjiraError, UserError, fail
+from tjira.formatters import (
     emit,
     log,
     normalize_issue,

@@ -1,4 +1,4 @@
-"""Subcomando `tjira-cli list` — búsqueda y listados (issues, boards, sprints, filters, dashboards)."""
+"""Subcomando `tjira list` — búsqueda y listados (issues, boards, sprints, filters, dashboards)."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from typing import Optional
 
 import typer
 
-from tjira_cli.client import JiraClient
-from tjira_cli.errors import TjiraError, fail
-from tjira_cli.formatters import (
+from tjira.client import JiraClient
+from tjira.errors import TjiraError, fail
+from tjira.formatters import (
     emit,
     log,
     normalize_board,

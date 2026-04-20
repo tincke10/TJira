@@ -1,0 +1,2 @@
+[console_scripts]
+tjira = tjira.cli:app

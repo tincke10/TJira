@@ -1,0 +1,25 @@
+<svg width="680" height="580" viewBox="0 0 680 580" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>tjira logo</title>
+  <desc>Logo de tijeras estilizadas en azul Jira para tjira, software de integración con Jira</desc>
+
+  <!-- Cuchilla 2 (debajo): azul medio, mango inferior-derecho a punta superior-izquierda -->
+  <g stroke-linejoin="round">
+    <line x1="435" y1="410" x2="340" y2="260" stroke="#2684FF" stroke-width="22" stroke-linecap="round"/>
+    <polygon points="350,255 330,265 245,90" fill="#2684FF"/>
+    <circle cx="435" cy="410" r="50" fill="none" stroke="#2684FF" stroke-width="22"/>
+  </g>
+
+  <!-- Cuchilla 1 (encima): azul oscuro, mango inferior-izquierdo a punta superior-derecha -->
+  <g stroke-linejoin="round">
+    <line x1="245" y1="410" x2="340" y2="260" stroke="#0052CC" stroke-width="22" stroke-linecap="round"/>
+    <polygon points="350,265 330,255 435,90" fill="#0052CC"/>
+    <circle cx="245" cy="410" r="50" fill="none" stroke="#0052CC" stroke-width="22"/>
+  </g>
+
+  <!-- Pivote central -->
+  <circle cx="340" cy="260" r="9" fill="#172B4D"/>
+  <circle cx="340" cy="260" r="3" fill="#DEEBFF"/>
+
+  <!-- Wordmark -->
+  <text x="340" y="520" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="72" font-weight="600" fill="#0052CC" letter-spacing="-2">tjira</text>
+</svg>

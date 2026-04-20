@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tjira-cli"
+name = "tjira"
 version = "0.1.0"
 description = "CLI unificado para gestionar Jira via REST con output JSON AI-friendly"
 readme = "README.md"
@@ -39,14 +39,14 @@ dev = [
 ]
 
 [project.scripts]
-tjira-cli = "tjira_cli.cli:app"
+tjira = "tjira.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/tincke10/JiraGestionREST"
 Issues = "https://github.com/tincke10/JiraGestionREST/issues"
 
 [tool.setuptools.packages.find]
-include = ["tjira_cli*"]
+include = ["tjira*"]
 exclude = ["tests*"]
 
 [tool.ruff]

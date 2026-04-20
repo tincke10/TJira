@@ -1,4 +1,4 @@
-"""Entry point principal del CLI `tjira-cli`.
+"""Entry point principal del CLI `tjira`.
 
 Convenciones de output:
     - stdout = data (humano o JSON según --json)
@@ -14,14 +14,14 @@ from __future__ import annotations
 
 import typer
 
-from tjira_cli import __version__
-from tjira_cli.commands import issue as issue_cmd
-from tjira_cli.commands import list_cmd
-from tjira_cli.commands import log as log_cmd
-from tjira_cli.commands import worklog as worklog_cmd
+from tjira import __version__
+from tjira.commands import issue as issue_cmd
+from tjira.commands import list_cmd
+from tjira.commands import log as log_cmd
+from tjira.commands import worklog as worklog_cmd
 
 app = typer.Typer(
-    name="tjira-cli",
+    name="tjira",
     help="CLI unificado para gestionar Jira via REST con output JSON AI-friendly.",
     add_completion=True,
     no_args_is_help=True,
@@ -30,7 +30,7 @@ app = typer.Typer(
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"tjira-cli {__version__}")
+        typer.echo(f"tjira {__version__}")
         raise typer.Exit()
 
 
@@ -45,7 +45,7 @@ def main(
         is_eager=True,
     ),
 ) -> None:
-    """Raíz del CLI — ver subcomandos con `tjira-cli --help`."""
+    """Raíz del CLI — ver subcomandos con `tjira --help`."""
 
 
 # Registrar subcomandos

@@ -14,13 +14,13 @@ from typing import Any, Optional
 import requests
 from requests.auth import HTTPBasicAuth
 
-from tjira_cli.config import (
+from tjira.config import (
     JIRA_API_TOKEN,
     JIRA_DOMAIN,
     JIRA_EMAIL,
     validate_config,
 )
-from tjira_cli.errors import APIError
+from tjira.errors import APIError
 
 DEFAULT_TIMEOUT = float(os.getenv("JIRA_TIMEOUT", "30"))
 

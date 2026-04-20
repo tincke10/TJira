@@ -1,7 +1,7 @@
 """Configuración centralizada del CLI.
 
 Lee credenciales desde variables de entorno (o `.env` en cwd).
-Timezone se maneja en `tjira_cli.tz`.
+Timezone se maneja en `tjira.tz`.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import os
 
 from dotenv import load_dotenv
 
-from tjira_cli.errors import UserError
+from tjira.errors import UserError
 
 load_dotenv()
 

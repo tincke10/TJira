@@ -1,4 +1,4 @@
-"""Exit codes y excepciones tipadas para tjira-cli.
+"""Exit codes y excepciones tipadas para tjira.
 
 Convenciones:
     0 → OK

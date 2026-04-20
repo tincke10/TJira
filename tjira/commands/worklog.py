@@ -1,4 +1,4 @@
-"""Subcomando `tjira-cli worklog` — bulk import/delete desde CSV."""
+"""Subcomando `tjira worklog` — bulk import/delete desde CSV."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from typing import Optional
 
 import typer
 
-from tjira_cli.client import JiraClient
-from tjira_cli.errors import APIError, TjiraError, UserError, fail
-from tjira_cli.formatters import emit, log
+from tjira.client import JiraClient
+from tjira.errors import APIError, TjiraError, UserError, fail
+from tjira.formatters import emit, log
 
 
 def register(app: typer.Typer) -> None:

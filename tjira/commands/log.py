@@ -1,4 +1,4 @@
-"""Subcomando `tjira-cli log` — registrar un worklog individual."""
+"""Subcomando `tjira log` — registrar un worklog individual."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from typing import Optional
 
 import typer
 
-from tjira_cli.client import JiraClient
-from tjira_cli.errors import TjiraError, UserError, fail
-from tjira_cli.formatters import emit, log, normalize_worklog
-from tjira_cli.tz import parse_user_datetime, to_jira_datetime
+from tjira.client import JiraClient
+from tjira.errors import TjiraError, UserError, fail
+from tjira.formatters import emit, log, normalize_worklog
+from tjira.tz import parse_user_datetime, to_jira_datetime
 
 
 def register(app: typer.Typer) -> None:
