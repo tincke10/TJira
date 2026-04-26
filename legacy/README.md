@@ -22,21 +22,36 @@ be a breaking change for the community.
 
 ## Running a legacy script
 
-From the project root:
+The legacy scripts read credentials from the process environment
+(`JIRA_DOMAIN` / `JIRA_EMAIL` / `JIRA_API_TOKEN`). Since `python-dotenv` is no
+longer a project dependency, you must source your `.env` file manually before
+running them:
 
 ```bash
+set -a && . ./.env && set +a            # one-time per shell
 python legacy/log_hours.py PROJ-123 2h
-python legacy/create_task.py PROJ "New task" --type Bug
-python legacy/list_tasks.py --project PROJ
-python legacy/import_worklogs.py worklogs.csv --dry-run
 ```
 
-Or from inside this directory:
+Or export the variables some other way (your shell rc, a secrets manager, CI):
+
+```bash
+export JIRA_DOMAIN=your-company.atlassian.net
+export JIRA_EMAIL=you@your-company.com
+export JIRA_API_TOKEN=ATATT...
+python legacy/log_hours.py PROJ-123 2h
+```
+
+From inside this directory it works the same:
 
 ```bash
 cd legacy
+set -a && . ../.env && set +a
 python log_hours.py PROJ-123 2h
 ```
+
+> **Tip:** If you would rather not juggle env vars at all, the new `tjira` CLI
+> stores credentials in `~/.config/tjira/config.toml`. See the project README
+> for `tjira profile add --from-env` to migrate.
 
 ## `JiraClient` Python API (legacy)
 

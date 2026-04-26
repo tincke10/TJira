@@ -23,6 +23,7 @@
 Manage Jira from the terminal with output designed for **humans _and_ AI agents**.
 
 - **One CLI, four verbs** — `log`, `issue`, `list`, `worklog`. That's it.
+- **Multi-account** — store as many Jira credentials as you need (`tjira profile add`), switch with one command (`tjira switch`), or override per-invocation (`tjira --profile work …`).
 - **JSON-first** — add `--json` to any command and get a stable, typed envelope.
 - **Script-safe** — exit codes `0/1/2`, data on stdout, logs on stderr. Pipe it into `jq`, wire it into CI, or let Claude / GPT call it as a tool.
 - **Bulk-friendly** — import or wipe worklogs from CSV with a single command.
@@ -34,15 +35,23 @@ Manage Jira from the terminal with output designed for **humans _and_ AI agents*
 # 1. Install
 pipx install .
 
-# 2. Configure — copy the template and fill it in
-cp .env.example .env        # then set JIRA_DOMAIN / JIRA_EMAIL / JIRA_API_TOKEN
+# 2. Create your first profile (interactive — prompts for domain / email / token)
+tjira profile add work
 
 # 3. Verify your setup
-tjira doctor                # validates env + credentials + connectivity
+tjira doctor                # validates active profile + credentials + connectivity
 
 # 4. Go
 tjira list boards
 tjira log PROJ-123 2h --comment "Implemented feature X"
+```
+
+Got more than one Jira instance? Add and switch as needed:
+
+```bash
+tjira profile add personal
+tjira switch personal                       # change active profile
+tjira --profile work list issues --json     # one-shot override
 ```
 
 ## Installation
@@ -66,7 +75,7 @@ tjira log PROJ-123 2h --comment "Implemented feature X"
 <tr>
 <td><b>Module mode</b></td>
 <td><code>python -m tjira ...</code></td>
-<td>No install needed, just <code>pip install typer requests python-dotenv</code></td>
+<td>No install needed, just <code>pip install typer requests tomli-w</code></td>
 </tr>
 </table>
 
@@ -74,18 +83,79 @@ tjira log PROJ-123 2h --comment "Implemented feature X"
 
 ## Configuration
 
-1. Grab your Jira API token at <https://id.atlassian.com/manage-profile/security/api-tokens>.
-2. Create a `.env` file in the project root:
+Credentials live in a TOML file at `$XDG_CONFIG_HOME/tjira/config.toml`
+(defaults to `~/.config/tjira/config.toml`). The file is created automatically
+the first time you run `tjira profile add`, and is written with `0600`
+permissions so other users on the host cannot read your tokens.
+
+### Add your first profile
+
+```bash
+tjira profile add work        # prompts interactively for domain / email / token
+```
+
+Or non-interactively:
+
+```bash
+tjira profile add work \
+  --domain your-company.atlassian.net \
+  --email you@your-company.com \
+  --token "$(cat ~/secrets/jira-token)"
+```
+
+> **Security note:** `--token X` exposes the token to your shell history and
+> the system process list (`ps`). For interactive use prefer plain
+> `tjira profile add work` (the prompt masks the token and never reaches argv).
+> For automation, read the token from a file or pipe it via the
+> `JIRA_API_TOKEN` env var + `--from-env`.
+
+Get your API token at <https://id.atlassian.com/manage-profile/security/api-tokens>.
+
+### Migrate from `.env`
+
+If you previously used `JIRA_DOMAIN/EMAIL/API_TOKEN` env vars or a `.env`
+file, source those values once and then:
+
+```bash
+export $(grep -v '^#' .env | xargs)         # if you still have a .env
+tjira profile add default --from-env
+```
+
+### Multiple profiles
+
+```bash
+tjira profile add personal                 # add a second one
+tjira profile list                         # see them all (active marked with *)
+tjira profile current                      # print just the active name
+tjira switch personal                      # change active
+tjira --profile work list issues --json    # one-shot override (warns on stderr)
+tjira profile rm personal                  # remove (prompts unless --yes)
+```
+
+### Optional environment variables
+
+These are still read from the environment because they are operational, not
+credential-based:
 
 ```env
-# Required
-JIRA_DOMAIN=your-company.atlassian.net
-JIRA_EMAIL=your.email@company.com
-JIRA_API_TOKEN=your_api_token_here
-
-# Optional
 JIRA_TIMEZONE=America/Argentina/Buenos_Aires   # defaults to system local
 JIRA_TIMEOUT=30                                # HTTP timeout in seconds
+```
+
+### Profile file shape
+
+```toml
+current_profile = "work"
+
+[profiles.work]
+domain = "your-company.atlassian.net"
+email = "you@your-company.com"
+api_token = "ATATT..."
+
+[profiles.personal]
+domain = "personal.atlassian.net"
+email = "you@gmail.com"
+api_token = "ATATT..."
 ```
 
 ## Commands
@@ -103,8 +173,8 @@ tjira doctor --json       # machine-readable for agents / automation
 
 Checks performed:
 
-- `.env` and required vars (`JIRA_DOMAIN`, `JIRA_EMAIL`, `JIRA_API_TOKEN`) present
-- `JIRA_DOMAIN` has a plausible shape (host-only, no scheme, no trailing slash)
+- An active profile is configured and resolvable (`tjira profile current`)
+- `profile.domain` has a plausible shape (host-only, no scheme, no trailing slash)
 - `JIRA_TIMEZONE` is a valid IANA timezone (if set)
 - Live `GET /myself` call to verify credentials actually work
 
@@ -158,6 +228,20 @@ tjira worklog delete worklogs.csv --dry-run       # preview deletion
 
 See [ESTRUCTURA_CSV.md](ESTRUCTURA_CSV.md) for the CSV schema.
 
+### `tjira profile` & `tjira switch` — manage Jira accounts
+
+```bash
+tjira profile add work                  # interactive prompts
+tjira profile add personal --from-env   # migrate from JIRA_DOMAIN/EMAIL/API_TOKEN
+tjira profile list                      # active is marked with *
+tjira profile list --json               # machine-readable (no tokens in payload)
+tjira profile current                   # parseable single line
+tjira profile rm personal --yes         # remove (skip confirmation)
+
+tjira switch personal                   # change active profile
+tjira --profile work list issues        # one-shot override; warns on stderr
+```
+
 ## Shell Completion
 
 Tab-completion is built in (courtesy of Typer). Install it once per shell:
@@ -203,9 +287,10 @@ Perfect for Claude Code tool definitions, GPT function-calling, or agent-style C
 ```
 TJira/
 ├── tjira/                    # Unified CLI package
-│   ├── cli.py                # Typer app + entry point
+│   ├── cli.py                # Typer app + dashboard view + --profile flag
 │   ├── client.py             # Jira REST client (APIError on failures)
-│   ├── config.py             # Env validation
+│   ├── config.py             # Active-profile resolution + override plumbing
+│   ├── profiles.py           # Profile dataclass + TOML-backed ProfileStore
 │   ├── errors.py             # Exit codes + typed exceptions
 │   ├── formatters.py         # Human/JSON output normalizers
 │   ├── tz.py                 # Timezone-aware datetimes
@@ -214,18 +299,19 @@ TJira/
 │       ├── log.py            # tjira log
 │       ├── issue.py          # tjira issue {get,create,update,transitions}
 │       ├── list_cmd.py       # tjira list {issues,boards,sprints,...}
-│       └── worklog.py        # tjira worklog {import,delete}
+│       ├── worklog.py        # tjira worklog {import,delete}
+│       ├── profile.py        # tjira profile {add,list,current,rm}
+│       └── switch.py         # tjira switch <name>
 │
-├── tests/                    # pytest suite (config, client, CLI, tz, formatters)
+├── tests/                    # pytest suite (config, profiles, client, CLI, tz, formatters)
 ├── legacy/                   # Pre-unification scripts (deprecated, still work)
-├── .github/workflows/ci.yml  # Lint (ruff) + tests (py3.9–3.12)
+├── .github/workflows/ci.yml  # Lint (ruff) + tests (py3.13/3.14)
 │
 ├── pyproject.toml            # Packaging + entry point + ruff/pytest config
 ├── README.md
 ├── CHANGELOG.md
 ├── LICENSE                   # MIT
 ├── ESTRUCTURA_CSV.md         # CSV schema for bulk worklog ops
-├── .env.example              # Template for local credentials
 ├── tjira-logo.svg            # Banner logo (with wordmark)
 └── tjira-icon.svg            # Square app icon
 ```
@@ -258,7 +344,7 @@ pytest
 ruff check .
 ```
 
-CI runs `ruff check` and `pytest` on Python 3.9 through 3.12 for every push
+CI runs `ruff check` and `pytest` on Python 3.13 and 3.14 for every push
 and pull request — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Contributing
