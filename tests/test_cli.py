@@ -30,8 +30,8 @@ def _last_json_line(stream: str) -> dict:
 
 
 @pytest.fixture
-def app(configured_env):
-    """App re-imported with a valid env."""
+def app(configured_profile):
+    """CLI app with a seeded ``default`` profile in the test config."""
     from tjira.cli import app
     return app
 
@@ -52,10 +52,22 @@ def test_version_flag(runner, app):
     assert "0.1.0" in result.stdout
 
 
-def test_no_args_shows_help(runner, app):
-    """With no subcommand, Typer prints help (via `no_args_is_help=True`)."""
+def test_no_args_shows_dashboard_with_active_profile(runner, app):
+    """`tjira` (no subcommand) renders the dashboard view of the active profile."""
     result = runner.invoke(app, [])
-    assert "Usage" in result.stdout or "Commands" in result.stdout
+    assert result.exit_code == 0
+    assert "Active profile" in result.stdout
+    assert "default" in result.stdout
+    assert "example.atlassian.net" in result.stdout
+
+
+def test_no_args_dashboard_when_empty_shows_onboarding_hint(runner):
+    """No profile + non-TTY → empty-state hint, no prompt."""
+    from tjira.cli import app
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "No Jira profile configured" in result.stdout
+    assert "tjira profile add" in result.stdout
 
 
 # ========== doctor ==========
@@ -75,20 +87,16 @@ def test_doctor_all_checks_pass(runner, app):
     assert envelope["data"]["all_passed"] is True
 
 
-@responses.activate
-def test_doctor_reports_invalid_domain_shape(runner, monkeypatch, app):
-    # Override env with an invalid value and re-import the command.
-    monkeypatch.setenv("JIRA_DOMAIN", "https://example.atlassian.net/")
-    import importlib
-    import tjira.cli as cli_mod
-    importlib.reload(cli_mod)
+def test_doctor_reports_invalid_domain_shape(runner, tmp_path):
+    """Profile with a malformed domain (scheme included) flags ``domain_shape``."""
+    from tjira.profiles import Profile, ProfileStore
+    store = ProfileStore(path=tmp_path / "tjira" / "config.toml")
+    store.add(Profile("default", "https://example.atlassian.net/", "x@x.com", "t"))
+    store.set_current("default")
+    store.save()
 
-    responses.get(
-        "https://https://example.atlassian.net//rest/api/3/myself",  # deliberately broken URL
-        status=500,
-    )
-    result = runner.invoke(cli_mod.app, ["doctor", "--json"])
-    # Fails because domain_shape does not pass
+    from tjira.cli import app
+    result = runner.invoke(app, ["doctor", "--json"])
     assert result.exit_code == 1
     envelope = json.loads(result.stdout)
     assert envelope["data"]["all_passed"] is False
@@ -96,17 +104,14 @@ def test_doctor_reports_invalid_domain_shape(runner, monkeypatch, app):
     assert "domain_shape" in failed_names
 
 
-def test_doctor_fails_when_env_missing(runner, monkeypatch):
-    # No `configured_env` fixture — env is empty (autouse fixture cleaned it).
-    import importlib
-    import tjira.cli as cli_mod
-    importlib.reload(cli_mod)
-
-    result = runner.invoke(cli_mod.app, ["doctor", "--json"])
+def test_doctor_fails_when_no_profile_configured(runner):
+    """Without ``configured_profile`` the store is empty and ``profile`` check fails."""
+    from tjira.cli import app
+    result = runner.invoke(app, ["doctor", "--json"])
     assert result.exit_code == 1
     envelope = json.loads(result.stdout)
     failed = [c["name"] for c in envelope["data"]["checks"] if not c["passed"]]
-    assert "env_vars" in failed
+    assert "profile" in failed
 
 
 # ========== log ==========

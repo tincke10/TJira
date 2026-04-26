@@ -5,10 +5,10 @@ format. Useful for onboarding and for agents (Claude, CI) that need to
 validate the environment is ready before running business commands.
 
 Checks:
-    1. `.env` (or environment variables) with credentials present
-    2. `JIRA_DOMAIN` with a plausible shape (host only, no scheme)
-    3. `JIRA_TIMEZONE` is a valid IANA zone (if set)
-    4. Live call to `GET /myself` to validate credentials
+    1. An active Jira profile is configured and resolvable
+    2. ``profile.domain`` has a plausible shape (host only, no scheme)
+    3. ``JIRA_TIMEZONE`` is a valid IANA zone (if set)
+    4. Live call to ``GET /myself`` to validate credentials
 
 Exit codes:
     0 -> all checks passed
@@ -23,8 +23,10 @@ from typing import Any
 import typer
 
 from tjira import __version__
+from tjira.config import resolve_profile
 from tjira.errors import APIError, TjiraError, UserError, fail
 from tjira.formatters import emit
+from tjira.profiles import Profile
 
 try:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -60,45 +62,53 @@ def register(app: typer.Typer) -> None:
 
 def _run_checks() -> list[CheckResult]:
     """Run the checks independently; never aborts on the first failure."""
+    profile_check, profile = _check_profile()
     return [
-        _check_env_vars(),
-        _check_domain_shape(),
+        profile_check,
+        _check_domain_shape(profile),
         _check_timezone(),
-        _check_jira_connectivity(),
+        _check_jira_connectivity(profile),
     ]
 
 
-def _check_env_vars() -> CheckResult:
-    required = ("JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN")
-    missing = [name for name in required if not os.getenv(name)]
-    if missing:
-        return {
-            "name": "env_vars",
-            "passed": False,
-            "detail": f"Missing variables: {', '.join(missing)}",
-            "missing": missing,
-        }
-    return {
-        "name": "env_vars",
-        "passed": True,
-        "detail": "All required variables are present",
-    }
+def _check_profile() -> tuple[CheckResult, Profile | None]:
+    try:
+        profile = resolve_profile()
+    except UserError as exc:
+        return (
+            {
+                "name": "profile",
+                "passed": False,
+                "detail": exc.message,
+                **exc.payload,
+            },
+            None,
+        )
+    return (
+        {
+            "name": "profile",
+            "passed": True,
+            "detail": f"Active profile: {profile.name} ({profile.email})",
+            "profile": profile.name,
+        },
+        profile,
+    )
 
 
-def _check_domain_shape() -> CheckResult:
-    domain = os.getenv("JIRA_DOMAIN") or ""
-    if not domain:
+def _check_domain_shape(profile: Profile | None) -> CheckResult:
+    if profile is None:
         return {
             "name": "domain_shape",
             "passed": False,
-            "detail": "JIRA_DOMAIN is not set",
+            "detail": "Cannot validate domain without a resolvable profile",
         }
+    domain = profile.domain
     if domain.startswith(("http://", "https://")) or domain.endswith("/"):
         return {
             "name": "domain_shape",
             "passed": False,
             "detail": (
-                "JIRA_DOMAIN must be the host only, without scheme or trailing slash "
+                "Profile domain must be the host only, without scheme or trailing slash "
                 "(e.g. 'your-company.atlassian.net')"
             ),
             "value": domain,
@@ -140,19 +150,16 @@ def _check_timezone() -> CheckResult:
     }
 
 
-def _check_jira_connectivity() -> CheckResult:
-    # Deferred import: if credentials are missing, `JiraClient()` raises on init.
-    missing = [n for n in ("JIRA_DOMAIN", "JIRA_EMAIL", "JIRA_API_TOKEN") if not os.getenv(n)]
-    if missing:
+def _check_jira_connectivity(profile: Profile | None) -> CheckResult:
+    if profile is None:
         return {
             "name": "jira_connectivity",
             "passed": False,
-            "detail": "Cannot validate connectivity without complete credentials",
-            "skipped_due_to": missing,
+            "detail": "Cannot validate connectivity without a resolvable profile",
         }
     try:
         from tjira.client import JiraClient
-        client = JiraClient()
+        client = JiraClient(profile=profile)
         me = client.get_myself()
     except APIError as exc:
         return {

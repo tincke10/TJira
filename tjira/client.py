@@ -15,13 +15,9 @@ from typing import Any
 import requests
 from requests.auth import HTTPBasicAuth
 
-from tjira.config import (
-    JIRA_API_TOKEN,
-    JIRA_DOMAIN,
-    JIRA_EMAIL,
-    validate_config,
-)
+from tjira.config import resolve_profile
 from tjira.errors import APIError
+from tjira.profiles import Profile
 
 DEFAULT_TIMEOUT = float(os.getenv("JIRA_TIMEOUT", "30"))
 
@@ -29,12 +25,13 @@ DEFAULT_TIMEOUT = float(os.getenv("JIRA_TIMEOUT", "30"))
 class JiraClient:
     """Client for the Jira Cloud REST API."""
 
-    def __init__(self) -> None:
-        validate_config()
-        self.base_url = f"https://{JIRA_DOMAIN}/rest/api/3"
-        self.agile_url = f"https://{JIRA_DOMAIN}/rest/agile/1.0"
-        self.browse_url = f"https://{JIRA_DOMAIN}/browse"
-        self.auth = HTTPBasicAuth(JIRA_EMAIL or "", JIRA_API_TOKEN or "")
+    def __init__(self, profile: Profile | None = None) -> None:
+        prof = profile or resolve_profile()
+        self.profile = prof
+        self.base_url = f"https://{prof.domain}/rest/api/3"
+        self.agile_url = f"https://{prof.domain}/rest/agile/1.0"
+        self.browse_url = f"https://{prof.domain}/browse"
+        self.auth = HTTPBasicAuth(prof.email, prof.api_token)
         self.headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",

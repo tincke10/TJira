@@ -13,10 +13,8 @@ from tjira.errors import APIError
 
 
 @pytest.fixture
-def client(configured_env):
-    """Instantiate a JiraClient with a mocked environment."""
-    # Deferred import: `configured_env` sets env vars before `JiraClient`
-    # reads `JIRA_DOMAIN` at construction time.
+def client(configured_profile):
+    """Instantiate a ``JiraClient`` against the seeded test profile."""
     from tjira.client import JiraClient
     return JiraClient()
 

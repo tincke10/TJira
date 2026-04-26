@@ -1,45 +1,98 @@
-"""Tests for configuration validation."""
+"""Tests for ``tjira.config`` — profile resolution + ``--profile`` override."""
 
 from __future__ import annotations
 
-import importlib
+from pathlib import Path
 
 import pytest
 
+from tjira import config as cfg
 from tjira.errors import UserError
+from tjira.profiles import Profile, ProfileStore
 
 
-def _reload_config(monkeypatch: pytest.MonkeyPatch):
-    """Re-import `tjira.config` so it picks up env vars set by monkeypatch."""
-    # Prevent `load_dotenv` from overriding env vars from a real host `.env`.
-    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
-    import tjira.config as cfg
-    return importlib.reload(cfg)
+def _seed(tmp_path: Path, *profiles: Profile, current: str | None) -> ProfileStore:
+    store = ProfileStore(path=tmp_path / "tjira" / "config.toml")
+    for prof in profiles:
+        store.add(prof)
+    if current is not None:
+        store.set_current(current)
+    store.save()
+    return store
 
 
-def test_validate_config_raises_when_all_missing(monkeypatch: pytest.MonkeyPatch):
-    cfg = _reload_config(monkeypatch)
+# ====================== resolve_profile ======================
+
+
+def test_resolve_profile_returns_active_profile(tmp_path: Path) -> None:
+    work = Profile("work", "company.atlassian.net", "me@company.com", "tok")
+    _seed(tmp_path, work, current="work")
+    assert cfg.resolve_profile() == work
+
+
+def test_resolve_profile_uses_override_when_set(tmp_path: Path) -> None:
+    work = Profile("work", "company.atlassian.net", "me@company.com", "tok-w")
+    personal = Profile("personal", "personal.atlassian.net", "me@gmail.com", "tok-p")
+    _seed(tmp_path, work, personal, current="work")
+
+    cfg.set_profile_override("personal")
+    try:
+        assert cfg.resolve_profile() == personal
+    finally:
+        cfg.set_profile_override(None)
+
+
+def test_resolve_profile_raises_when_override_missing(tmp_path: Path) -> None:
+    work = Profile("work", "company.atlassian.net", "me@company.com", "tok")
+    _seed(tmp_path, work, current="work")
+
+    cfg.set_profile_override("ghost")
+    try:
+        with pytest.raises(UserError) as exc_info:
+            cfg.resolve_profile()
+    finally:
+        cfg.set_profile_override(None)
+    assert exc_info.value.payload["profile"] == "ghost"
+    assert "work" in exc_info.value.payload["available"]
+
+
+def test_resolve_profile_raises_when_no_profiles(tmp_path: Path) -> None:
     with pytest.raises(UserError) as exc_info:
-        cfg.validate_config()
-    assert exc_info.value.payload["missing"] == [
-        "JIRA_DOMAIN",
-        "JIRA_EMAIL",
-        "JIRA_API_TOKEN",
-    ]
+        cfg.resolve_profile()
+    assert "profile add" in exc_info.value.payload["hint"]
 
 
-def test_validate_config_reports_only_missing_subset(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("JIRA_DOMAIN", "example.atlassian.net")
-    monkeypatch.setenv("JIRA_EMAIL", "test@example.com")
-    cfg = _reload_config(monkeypatch)
+def test_resolve_profile_raises_when_no_active_selected(tmp_path: Path) -> None:
+    work = Profile("work", "company.atlassian.net", "me@company.com", "tok")
+    _seed(tmp_path, work, current=None)
     with pytest.raises(UserError) as exc_info:
-        cfg.validate_config()
-    assert exc_info.value.payload["missing"] == ["JIRA_API_TOKEN"]
+        cfg.resolve_profile()
+    assert "switch" in exc_info.value.payload["hint"]
+    assert "work" in exc_info.value.payload["available"]
 
 
-def test_validate_config_passes_when_all_set(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("JIRA_DOMAIN", "example.atlassian.net")
-    monkeypatch.setenv("JIRA_EMAIL", "test@example.com")
-    monkeypatch.setenv("JIRA_API_TOKEN", "token")
-    cfg = _reload_config(monkeypatch)
-    cfg.validate_config()  # no raise
+# ====================== set/get_profile_override ======================
+
+
+def test_override_round_trip() -> None:
+    cfg.set_profile_override("foo")
+    assert cfg.get_profile_override() == "foo"
+    cfg.set_profile_override(None)
+    assert cfg.get_profile_override() is None
+
+
+def test_override_empty_string_normalized_to_none() -> None:
+    cfg.set_profile_override("")
+    assert cfg.get_profile_override() is None
+
+
+# ====================== has_any_profile ======================
+
+
+def test_has_any_profile_false_when_empty(tmp_path: Path) -> None:
+    assert cfg.has_any_profile() is False
+
+
+def test_has_any_profile_true_when_one_exists(tmp_path: Path) -> None:
+    _seed(tmp_path, Profile("solo", "x.atlassian.net", "x@x.com", "t"), current=None)
+    assert cfg.has_any_profile() is True
