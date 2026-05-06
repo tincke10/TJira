@@ -42,5 +42,46 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+      # This run includes:
+      #   - unit tests (tests/test_*.py)
+      #   - E2E (B): subprocess + pytest-httpserver mock (tests/e2e/test_subprocess_mock.py)
+      #   - E2E (A): real-Jira tests are auto-skipped here (no secrets in this job)
       - name: Run pytest
         run: pytest -q
+
+  e2e-real:
+    name: E2E against real Jira (gated)
+    runs-on: ubuntu-latest
+    # Skip on PRs from forks — secrets are not injected there, so the job
+    # cannot succeed and would just confuse contributors.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+      - name: Check that real-Jira secrets are configured
+        id: check
+        env:
+          JIRA_DOMAIN: ${{ secrets.JIRA_DOMAIN }}
+        run: |
+          if [ -z "$JIRA_DOMAIN" ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Real-Jira E2E skipped — set repo secrets JIRA_DOMAIN, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_TEST_ISSUE to enable."
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install package + dev deps
+        if: steps.check.outputs.ok == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run real-Jira E2E (read + write, with idempotent cleanup)
+        if: steps.check.outputs.ok == 'true'
+        env:
+          JIRA_DOMAIN: ${{ secrets.JIRA_DOMAIN }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_TEST_ISSUE: ${{ secrets.JIRA_TEST_ISSUE }}
+        run: pytest tests/e2e/test_real_jira.py -v
