@@ -10,6 +10,7 @@ Differences from `jira_client.py` (legacy, kept for backwards compatibility):
 from __future__ import annotations
 
 import os
+from datetime import date, datetime, time, timezone
 from typing import Any
 
 import requests
@@ -17,6 +18,7 @@ from requests.auth import HTTPBasicAuth
 
 from tjira.config import resolve_profile
 from tjira.errors import APIError
+from tjira.overlap import _parse_jira_started
 from tjira.profiles import Profile
 
 DEFAULT_TIMEOUT = float(os.getenv("JIRA_TIMEOUT", "30"))
@@ -28,14 +30,22 @@ class JiraClient:
     def __init__(self, profile: Profile | None = None) -> None:
         prof = profile or resolve_profile()
         self.profile = prof
-        self.base_url = f"https://{prof.domain}/rest/api/3"
-        self.agile_url = f"https://{prof.domain}/rest/agile/1.0"
+        # Env vars TJIRA_API_BASE_URL / TJIRA_AGILE_BASE_URL override the
+        # default Atlassian Cloud URLs. Useful for tests (point at a localhost
+        # mock server) and for Jira On-Premise / staging environments.
+        self.base_url = (
+            os.getenv("TJIRA_API_BASE_URL") or f"https://{prof.domain}/rest/api/3"
+        )
+        self.agile_url = (
+            os.getenv("TJIRA_AGILE_BASE_URL") or f"https://{prof.domain}/rest/agile/1.0"
+        )
         self.browse_url = f"https://{prof.domain}/browse"
         self.auth = HTTPBasicAuth(prof.email, prof.api_token)
         self.headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
+        self._account_id: str | None = None
 
     # ---------- internals ----------
 
@@ -151,6 +161,58 @@ class JiraClient:
 
     def delete_worklog(self, issue_key: str, worklog_id: str) -> None:
         self._request("DELETE", f"issue/{issue_key}/worklog/{worklog_id}", expected=(204,))
+
+    def get_account_id(self) -> str:
+        """Return the current user's accountId, cached after the first call."""
+        if self._account_id is None:
+            self._account_id = self.get_myself().get("accountId") or ""
+        return self._account_id
+
+    def search_user_worklogs(self, date_from: date, date_to: date) -> list[dict]:
+        """Return all worklogs authored by the current user in ``[date_from, date_to]``.
+
+        Each returned worklog has an extra ``_issue_key`` field with the issue
+        it belongs to, so callers can render conflicts without an extra lookup.
+        """
+        my_account_id = self.get_account_id()
+        jql = (
+            f"worklogAuthor = currentUser() "
+            f'AND worklogDate >= "{date_from.isoformat()}" '
+            f'AND worklogDate <= "{date_to.isoformat()}"'
+        )
+        issues = self.search_issues(jql, max_results=100)
+
+        # Window in UTC for filtering started timestamps. We accept anything
+        # whose start lies within the [date_from 00:00, date_to+1d 00:00) window
+        # in UTC — wide enough that timezone differences won't drop legitimate
+        # entries. Per-day precision is the contract.
+        win_start = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+        win_end = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+
+        out: list[dict] = []
+        for issue in issues:
+            key = issue.get("key")
+            if not key:
+                continue
+            for wl in self.get_worklogs(key):
+                author = (wl.get("author") or {}).get("accountId")
+                if author != my_account_id:
+                    continue
+                started_raw = wl.get("started")
+                if not started_raw:
+                    continue
+                try:
+                    started_dt = _parse_jira_started(started_raw)
+                except ValueError:
+                    continue
+                if started_dt.tzinfo is None:
+                    started_dt = started_dt.replace(tzinfo=timezone.utc)
+                started_utc = started_dt.astimezone(timezone.utc).replace(tzinfo=timezone.utc)
+                if not (win_start <= started_utc <= win_end):
+                    continue
+                wl["_issue_key"] = key
+                out.append(wl)
+        return out
 
     # ==================== SEARCH ====================
 

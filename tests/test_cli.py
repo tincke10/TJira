@@ -116,15 +116,32 @@ def test_doctor_fails_when_no_profile_configured(runner):
 
 # ========== log ==========
 
+def _mock_no_existing_worklogs() -> None:
+    """Stub /myself + /search/jql so the overlap pre-check finds nothing."""
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/myself",
+        json={"accountId": "me-123"},
+        status=200,
+    )
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/search/jql",
+        json={"issues": []},
+        status=200,
+    )
+
+
 @responses.activate
 def test_log_happy_path_json(runner, app):
+    _mock_no_existing_worklogs()
     responses.post(
         "https://example.atlassian.net/rest/api/3/issue/PROJ-1/worklog",
         json={"id": "77", "timeSpent": "2h",
               "started": "2026-04-20T09:00:00.000+0000"},
         status=201,
     )
-    result = runner.invoke(app, ["log", "PROJ-1", "2h", "--json"])
+    result = runner.invoke(
+        app, ["log", "PROJ-1", "2h", "2026-04-20 09:00", "--json"]
+    )
     assert result.exit_code == 0
     envelope = json.loads(result.stdout)
     assert envelope["ok"] is True
@@ -133,12 +150,15 @@ def test_log_happy_path_json(runner, app):
 
 @responses.activate
 def test_log_api_error_exits_2(runner, app):
+    _mock_no_existing_worklogs()
     responses.post(
         "https://example.atlassian.net/rest/api/3/issue/PROJ-1/worklog",
         json={"errorMessages": ["Issue does not exist"]},
         status=404,
     )
-    result = runner.invoke(app, ["log", "PROJ-1", "2h", "--json"])
+    result = runner.invoke(
+        app, ["log", "PROJ-1", "2h", "2026-04-20 09:00", "--json"]
+    )
     assert result.exit_code == 2
     envelope = _last_json_line(result.stderr)
     assert envelope["ok"] is False
@@ -150,6 +170,62 @@ def test_log_invalid_date_exits_1(runner, app):
     assert result.exit_code == 1
     envelope = _last_json_line(result.stderr)
     assert envelope["ok"] is False
+
+
+@responses.activate
+def test_log_overlap_exits_3_with_payload(runner, app, monkeypatch):
+    """Existing worklog 09:30-10:30 UTC; user logs 09:00-10:00 UTC → exit 3."""
+    monkeypatch.setenv("JIRA_TIMEZONE", "UTC")
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/myself",
+        json={"accountId": "me-123"},
+        status=200,
+    )
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/search/jql",
+        json={"issues": [{"key": "PROJ-9"}]},
+        status=200,
+    )
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-9/worklog",
+        json={"worklogs": [{
+            "id": "55",
+            "author": {"accountId": "me-123"},
+            "started": "2026-04-20T09:30:00.000+0000",
+            "timeSpentSeconds": 3600,
+            "timeSpent": "1h",
+        }]},
+        status=200,
+    )
+    # No POST registered — if the command tries to post, the test fails.
+    result = runner.invoke(
+        app, ["log", "PROJ-1", "1h", "2026-04-20 09:00", "--json"]
+    )
+    assert result.exit_code == 3
+    envelope = _last_json_line(result.stderr)
+    assert envelope["ok"] is False
+    assert envelope["conflict"]["issue"] == "PROJ-9"
+    assert envelope["conflict"]["worklog_id"] == "55"
+    # Existing ends at 10:30 — suggested start aligns with that.
+    assert "10:30" in envelope["suggested_start"]
+
+
+@responses.activate
+def test_log_overlap_force_bypasses_check(runner, app):
+    """--force skips the overlap pre-check entirely."""
+    # No /myself or /search/jql mock — they must NOT be called when --force is set.
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-1/worklog",
+        json={"id": "99", "timeSpent": "1h",
+              "started": "2026-04-20T09:00:00.000+0000"},
+        status=201,
+    )
+    result = runner.invoke(
+        app, ["log", "PROJ-1", "1h", "2026-04-20 09:00", "--force", "--json"]
+    )
+    assert result.exit_code == 0
+    envelope = json.loads(result.stdout)
+    assert envelope["data"]["id"] == "99"
 
 
 # ========== list ==========
@@ -231,14 +307,126 @@ def test_worklog_import_dry_run_no_http(runner, app, tmp_path):
     csv.write_text(
         "Jira Key,Time Spent,Started\n"
         "PROJ-1,2h,2026-04-20T09:00:00.000+0000\n"
-        "PROJ-2,1h,2026-04-20T10:00:00.000+0000\n",
+        "PROJ-2,1h,2026-04-20T11:00:00.000+0000\n",
         encoding="utf-8",
     )
-    # Without `@responses.activate`, any real HTTP would make the test flaky.
-    # In dry-run the client is never constructed.
-    result = runner.invoke(app, ["worklog", "import", str(csv), "--dry-run", "--json"])
+    # --no-adjust + --dry-run = no HTTP at all (offline preview).
+    result = runner.invoke(
+        app, ["worklog", "import", str(csv), "--dry-run", "--no-adjust", "--json"]
+    )
     assert result.exit_code == 0
     data = json.loads(result.stdout)["data"]
     assert data["dry_run"] is True
     assert data["success_count"] == 2
     assert data["error_count"] == 0
+    assert data["adjusted_count"] == 0
+
+
+@responses.activate
+def test_worklog_import_cascade_adjusts_internal_overlaps(runner, app, tmp_path, monkeypatch):
+    """Three rows that chain back-to-back when adjusted."""
+    monkeypatch.setenv("JIRA_TIMEZONE", "UTC")
+    csv = tmp_path / "wl.csv"
+    csv.write_text(
+        "Jira Key,Time Spent,Started\n"
+        "PROJ-1,1h,2026-04-20T09:00:00.000+0000\n"
+        "PROJ-2,1h,2026-04-20T09:30:00.000+0000\n"
+        "PROJ-3,1h,2026-04-20T10:00:00.000+0000\n",
+        encoding="utf-8",
+    )
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/myself",
+        json={"accountId": "me-123"},
+        status=200,
+    )
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/search/jql",
+        json={"issues": []},
+        status=200,
+    )
+    # We use --dry-run so no POSTs are needed.
+    result = runner.invoke(
+        app, ["worklog", "import", str(csv), "--dry-run", "--json"]
+    )
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)["data"]
+    assert data["success_count"] == 3
+    assert data["adjusted_count"] == 2  # rows 2 and 3 displaced
+    starts = [s["started"] for s in data["success"]]
+    # Row 1: 09:00 (untouched). Row 2: shifted to 10:00. Row 3: shifted to 11:00.
+    assert "T09:00:00" in starts[0]
+    assert "T10:00:00" in starts[1]
+    assert "T11:00:00" in starts[2]
+
+
+@responses.activate
+def test_worklog_import_adjusts_against_existing_jira_worklog(runner, app, tmp_path, monkeypatch):
+    """A row that would overlap with a worklog ALREADY in Jira gets pushed."""
+    monkeypatch.setenv("JIRA_TIMEZONE", "UTC")
+    csv = tmp_path / "wl.csv"
+    csv.write_text(
+        "Jira Key,Time Spent,Started\n"
+        "PROJ-1,1h,2026-04-20T09:00:00.000+0000\n",
+        encoding="utf-8",
+    )
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/myself",
+        json={"accountId": "me-123"},
+        status=200,
+    )
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/search/jql",
+        json={"issues": [{"key": "PROJ-EXISTING"}]},
+        status=200,
+    )
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-EXISTING/worklog",
+        json={"worklogs": [{
+            "id": "999",
+            "author": {"accountId": "me-123"},
+            "started": "2026-04-20T08:30:00.000+0000",
+            "timeSpentSeconds": 3600,
+            "timeSpent": "1h",
+        }]},
+        status=200,
+    )
+    result = runner.invoke(
+        app, ["worklog", "import", str(csv), "--dry-run", "--json"]
+    )
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)["data"]
+    assert data["adjusted_count"] == 1
+    # Row pushed from 09:00 to 09:30 (end of the existing 08:30+1h).
+    assert "T09:30:00" in data["success"][0]["started"]
+
+
+@responses.activate
+def test_worklog_import_no_adjust_keeps_legacy_behavior(runner, app, tmp_path):
+    """--no-adjust skips the overlap check entirely; no /myself or /search/jql calls."""
+    csv = tmp_path / "wl.csv"
+    csv.write_text(
+        "Jira Key,Time Spent,Started\n"
+        "PROJ-1,1h,2026-04-20T09:00:00.000+0000\n"
+        "PROJ-2,1h,2026-04-20T09:30:00.000+0000\n",
+        encoding="utf-8",
+    )
+    # POSTs both rows as-is — no pre-flight calls.
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-1/worklog",
+        json={"id": "1", "timeSpent": "1h",
+              "started": "2026-04-20T09:00:00.000+0000"},
+        status=201,
+    )
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-2/worklog",
+        json={"id": "2", "timeSpent": "1h",
+              "started": "2026-04-20T09:30:00.000+0000"},
+        status=201,
+    )
+    result = runner.invoke(
+        app, ["worklog", "import", str(csv), "--no-adjust", "--json"]
+    )
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)["data"]
+    assert data["success_count"] == 2
+    assert data["adjusted_count"] == 0
