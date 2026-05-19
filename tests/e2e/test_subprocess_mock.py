@@ -195,3 +195,192 @@ def test_e2e_list_boards_uses_agile_base_url(tjira_env, httpserver):
     assert result.returncode == 0, f"stderr: {result.stderr}"
     envelope = json.loads(result.stdout)
     assert envelope["data"][0]["name"] == "Board A"
+
+
+# ==================== T5.1: issue create --parent (wire payload) ====================
+
+def test_e2e_issue_create_with_parent_sends_correct_payload(tjira_env, httpserver):
+    """T5.1: POST body must contain fields.parent = {"key": "EPIC-1"}."""
+    httpserver.expect_request("/rest/api/3/issue", method="POST").respond_with_json(
+        {"key": "PROJ-99", "id": "10099"},
+        status=201,
+    )
+
+    result = _run(
+        tjira_env, "issue", "create", "PROJ", "My task", "--parent", "EPIC-1", "--json"
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    envelope = json.loads(result.stdout)
+    assert envelope["ok"] is True
+    assert envelope["data"]["key"] == "PROJ-99"
+    assert envelope["data"]["parent_key"] == "EPIC-1"
+
+    # Verify the wire payload sent to Jira contained the parent field.
+    assert len(httpserver.log) == 1, "Expected exactly one HTTP request"
+    request, _ = httpserver.log[0]
+    body = json.loads(request.data)
+    assert body["fields"]["parent"] == {"key": "EPIC-1"}, (
+        f"Expected fields.parent to be {{\"key\": \"EPIC-1\"}}, got: {body['fields'].get('parent')!r}"
+    )
+
+
+# ==================== T5.2: issue update --parent set and clear ====================
+
+def test_e2e_issue_update_parent_set_sends_correct_payload(tjira_env, httpserver):
+    """T5.2a: PUT body must contain fields.parent = {"key": "EPIC-2"} when setting parent."""
+    httpserver.expect_request("/rest/api/3/issue/PROJ-10", method="PUT").respond_with_data(
+        "", status=204
+    )
+
+    result = _run(
+        tjira_env, "issue", "update", "PROJ-10", "--parent", "EPIC-2", "--json"
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    envelope = json.loads(result.stdout)
+    assert envelope["ok"] is True
+    assert envelope["data"]["parent_key"] == "EPIC-2"
+
+    # Verify the wire payload.
+    assert len(httpserver.log) >= 1
+    put_requests = [
+        (req, resp) for req, resp in httpserver.log if req.method == "PUT"
+    ]
+    assert len(put_requests) == 1
+    body = json.loads(put_requests[0][0].data)
+    assert body["fields"]["parent"] == {"key": "EPIC-2"}, (
+        f"Expected fields.parent {{\"key\": \"EPIC-2\"}}, got: {body['fields'].get('parent')!r}"
+    )
+
+
+def test_e2e_issue_update_parent_none_sends_null_payload(tjira_env, httpserver):
+    """T5.2b: --parent NONE must send fields.parent = null in the PUT body."""
+    httpserver.expect_request("/rest/api/3/issue/PROJ-10", method="PUT").respond_with_data(
+        "", status=204
+    )
+
+    result = _run(
+        tjira_env, "issue", "update", "PROJ-10", "--parent", "NONE", "--json"
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    envelope = json.loads(result.stdout)
+    assert envelope["ok"] is True
+    assert envelope["data"]["parent_key"] is None
+
+    # Verify the wire payload: "parent" must be JSON null, not the string "NONE".
+    put_requests = [
+        (req, resp) for req, resp in httpserver.log if req.method == "PUT"
+    ]
+    assert len(put_requests) == 1
+    body = json.loads(put_requests[0][0].data)
+    assert "parent" in body["fields"], "Expected 'parent' key in fields"
+    assert body["fields"]["parent"] is None, (
+        f"Expected fields.parent to be null, got: {body['fields']['parent']!r}"
+    )
+
+
+# ==================== T5.3: list projects -- pagination collected ====================
+
+def test_e2e_list_projects_returns_all_projects(tjira_env, httpserver):
+    """T5.3: list projects --json returns the full set from the server response."""
+    httpserver.expect_request("/rest/api/3/project/search").respond_with_json({
+        "values": [
+            {"key": "ALPHA", "name": "Alpha Project", "projectTypeKey": "software", "style": "next-gen"},
+            {"key": "BETA", "name": "Beta Project", "projectTypeKey": "business", "style": "classic"},
+        ],
+        "isLast": True,
+        "maxResults": 50,
+        "startAt": 0,
+        "total": 2,
+    })
+
+    result = _run(tjira_env, "list", "projects", "--json")
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    envelope = json.loads(result.stdout)
+    assert envelope["ok"] is True
+    projects = envelope["data"]
+    assert len(projects) == 2
+    keys = {p["key"] for p in projects}
+    assert keys == {"ALPHA", "BETA"}
+    for proj in projects:
+        assert "key" in proj
+        assert "name" in proj
+        assert "type" in proj
+        assert "style" in proj
+
+
+# ==================== T5.4: list fields two-roundtrip flow ====================
+
+def test_e2e_list_fields_two_roundtrip_flow(tjira_env, httpserver):
+    """T5.4: list fields PROJ Task --json performs two HTTP requests:
+    1) issuetypes lookup to resolve "Task" → id "10001"
+    2) fields fetch for issuetype 10001
+    """
+    # Step 1 response: issuetypes endpoint
+    httpserver.expect_request(
+        "/rest/api/3/issue/createmeta/PROJ/issuetypes"
+    ).respond_with_json({
+        "values": [
+            {"id": "10001", "name": "Task", "subtask": False, "description": "A task"},
+            {"id": "10002", "name": "Bug", "subtask": False, "description": "A bug"},
+        ],
+        "isLast": True,
+        "startAt": 0,
+        "maxResults": 50,
+        "total": 2,
+    })
+
+    # Step 2 response: fields for issuetype 10001
+    httpserver.expect_request(
+        "/rest/api/3/issue/createmeta/PROJ/issuetypes/10001"
+    ).respond_with_json({
+        "values": [
+            {
+                "name": "Summary",
+                "key": "summary",
+                "required": True,
+                "schema": {"type": "string"},
+            },
+            {
+                "name": "Priority",
+                "key": "priority",
+                "required": False,
+                "schema": {"type": "priority"},
+                "allowedValues": [{"name": "High"}, {"name": "Medium"}, {"name": "Low"}],
+            },
+        ],
+        "isLast": True,
+        "startAt": 0,
+        "maxResults": 100,
+        "total": 2,
+    })
+
+    result = _run(tjira_env, "list", "fields", "PROJ", "Task", "--json")
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    envelope = json.loads(result.stdout)
+    assert envelope["ok"] is True
+    fields = envelope["data"]
+    assert len(fields) == 2
+
+    # Verify the two-roundtrip flow: both endpoints were called.
+    paths_hit = [str(req.path) for req, _ in httpserver.log]
+    assert "/rest/api/3/issue/createmeta/PROJ/issuetypes" in paths_hit, (
+        f"Expected issuetypes lookup request, got: {paths_hit}"
+    )
+    assert "/rest/api/3/issue/createmeta/PROJ/issuetypes/10001" in paths_hit, (
+        f"Expected fields fetch request, got: {paths_hit}"
+    )
+
+    # Verify field shape
+    summary_field = next((f for f in fields if f["key"] == "summary"), None)
+    assert summary_field is not None
+    assert summary_field["required"] is True
+    assert summary_field["type"] == "string"
+
+    priority_field = next((f for f in fields if f["key"] == "priority"), None)
+    assert priority_field is not None
+    assert priority_field["allowed_values"] == ["High", "Medium", "Low"]
