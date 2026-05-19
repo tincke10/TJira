@@ -474,6 +474,232 @@ def test_worklog_import_adjusts_against_existing_jira_worklog(runner, app, tmp_p
     assert "T09:30:00" in data["success"][0]["started"]
 
 
+# ========== G4: list discovery commands ==========
+
+@responses.activate
+def test_list_projects_json_returns_normalized_array(runner, app):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/project/search",
+        json={
+            "values": [
+                {"key": "PROJ", "name": "My Project", "projectTypeKey": "software", "style": "next-gen"},
+                {"key": "OPS", "name": "Ops", "projectTypeKey": "business", "style": "classic"},
+            ],
+            "isLast": True,
+        },
+        status=200,
+    )
+    result = runner.invoke(app, ["list", "projects", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)["data"]
+    assert len(data) == 2
+    assert data[0]["key"] == "PROJ"
+    assert data[0]["type"] == "software"
+    assert data[0]["style"] == "next-gen"
+
+
+@responses.activate
+def test_list_projects_type_filter_forwarded_as_typekey(runner, app):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/project/search",
+        json={"values": [], "isLast": True},
+        status=200,
+    )
+    result = runner.invoke(app, ["list", "projects", "--limit", "100", "--type", "software", "--json"])
+    assert result.exit_code == 0
+
+    import urllib.parse
+    qs = urllib.parse.parse_qs(urllib.parse.urlparse(responses.calls[0].request.url).query)
+    assert qs["typeKey"] == ["software"]
+    assert qs["maxResults"] == ["100"]
+
+
+def test_list_projects_limit_zero_exits_1(runner, app):
+    result = runner.invoke(app, ["list", "projects", "--limit", "0", "--json"])
+    assert result.exit_code == 1
+    assert len(responses.calls) == 0
+
+
+@responses.activate
+def test_list_projects_empty_returns_empty_json_array(runner, app):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/project/search",
+        json={"values": [], "isLast": True},
+        status=200,
+    )
+    result = runner.invoke(app, ["list", "projects", "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["data"] == []
+
+
+@responses.activate
+def test_list_issue_types_json_returns_normalized_array(runner, app):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/createmeta/PROJ/issuetypes",
+        json={
+            "values": [
+                {"id": "10001", "name": "Task", "subtask": False, "description": "A task"},
+                {"id": "10002", "name": "Bug", "subtask": False, "description": "A bug"},
+            ],
+            "isLast": True,
+        },
+        status=200,
+    )
+    result = runner.invoke(app, ["list", "issue-types", "PROJ", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)["data"]
+    assert len(data) == 2
+    assert data[0]["id"] == "10001"
+    assert data[0]["subtask"] is False
+
+
+def test_list_issue_types_empty_project_key_exits_1(runner, app):
+    result = runner.invoke(app, ["list", "issue-types", "", "--json"])
+    assert result.exit_code == 1
+    assert len(responses.calls) == 0
+
+
+@responses.activate
+def test_list_issue_types_404_exits_2(runner, app):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/createmeta/GHOST/issuetypes",
+        json={"errorMessages": ["project not found"]},
+        status=404,
+    )
+    result = runner.invoke(app, ["list", "issue-types", "GHOST", "--json"])
+    assert result.exit_code == 2
+    envelope = _last_json_line(result.stderr)
+    assert envelope["ok"] is False
+    assert "project_key" in envelope
+
+
+@responses.activate
+def test_list_users_json_with_and_without_email(runner, app):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/user/search",
+        json=[
+            {"accountId": "acc-1", "displayName": "John", "emailAddress": "john@x.com", "active": True},
+            {"accountId": "acc-2", "displayName": "Jane", "active": True},
+        ],
+        status=200,
+    )
+    result = runner.invoke(app, ["list", "users", "john", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)["data"]
+    assert len(data) == 2
+    assert data[0]["email"] == "john@x.com"
+    assert data[1]["email"] is None
+
+
+def test_list_users_empty_query_exits_1(runner, app):
+    result = runner.invoke(app, ["list", "users", "", "--json"])
+    assert result.exit_code == 1
+    assert len(responses.calls) == 0
+
+
+def test_list_users_limit_zero_exits_1(runner, app):
+    result = runner.invoke(app, ["list", "users", "john", "--limit", "0", "--json"])
+    assert result.exit_code == 1
+
+
+@responses.activate
+def test_list_users_empty_response_returns_empty_array(runner, app):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/user/search",
+        json=[],
+        status=200,
+    )
+    result = runner.invoke(app, ["list", "users", "nobody", "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["data"] == []
+
+
+@responses.activate
+def test_list_fields_json_two_roundtrip(runner, app):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/createmeta/PROJ/issuetypes",
+        json={
+            "values": [{"id": "10001", "name": "Task", "subtask": False, "description": ""}],
+            "isLast": True,
+        },
+        status=200,
+    )
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/createmeta/PROJ/issuetypes/10001",
+        json={
+            "values": [
+                {"name": "Summary", "key": "summary", "required": True, "schema": {"type": "string"}},
+                {"name": "Priority", "key": "priority", "required": False,
+                 "schema": {"type": "priority"},
+                 "allowedValues": [{"name": "High"}, {"name": "Low"}]},
+            ]
+        },
+        status=200,
+    )
+    result = runner.invoke(app, ["list", "fields", "PROJ", "Task", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)["data"]
+    assert len(data) == 2
+    summary = next(f for f in data if f["key"] == "summary")
+    assert summary["required"] is True
+    assert summary["allowed_values"] is None
+    priority = next(f for f in data if f["key"] == "priority")
+    assert priority["allowed_values"] == ["High", "Low"]
+    assert len(responses.calls) == 2
+
+
+@responses.activate
+def test_list_fields_required_only_filters_output(runner, app):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/createmeta/PROJ/issuetypes",
+        json={
+            "values": [{"id": "10001", "name": "Task", "subtask": False, "description": ""}],
+            "isLast": True,
+        },
+        status=200,
+    )
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/createmeta/PROJ/issuetypes/10001",
+        json={
+            "values": [
+                {"name": "Summary", "key": "summary", "required": True, "schema": {"type": "string"}},
+                {"name": "Priority", "key": "priority", "required": False, "schema": {"type": "priority"}},
+                {"name": "Assignee", "key": "assignee", "required": False, "schema": {"type": "user"}},
+            ]
+        },
+        status=200,
+    )
+    result = runner.invoke(app, ["list", "fields", "PROJ", "Task", "--required-only", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)["data"]
+    assert len(data) == 1
+    assert data[0]["required"] is True
+
+
+@responses.activate
+def test_list_fields_ghost_issuetype_exits_2(runner, app):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/createmeta/PROJ/issuetypes",
+        json={
+            "values": [{"id": "10001", "name": "Task", "subtask": False, "description": ""}],
+            "isLast": True,
+        },
+        status=200,
+    )
+    result = runner.invoke(app, ["list", "fields", "PROJ", "GhostType", "--json"])
+    assert result.exit_code == 2
+    envelope = _last_json_line(result.stderr)
+    assert "GhostType" in envelope["error"]
+    assert envelope["project_key"] == "PROJ"
+    assert envelope["issue_type"] == "GhostType"
+    assert "available_types" in envelope
+
+
+def test_list_fields_limit_zero_exits_1(runner, app):
+    result = runner.invoke(app, ["list", "fields", "PROJ", "Task", "--limit", "0", "--json"])
+    assert result.exit_code == 1
+
+
 @responses.activate
 def test_worklog_import_no_adjust_keeps_legacy_behavior(runner, app, tmp_path):
     """--no-adjust skips the overlap check entirely; no /myself or /search/jql calls."""
