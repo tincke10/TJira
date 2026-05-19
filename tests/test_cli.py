@@ -295,6 +295,80 @@ def test_issue_transitions_lists(runner, app):
     assert {t["name"] for t in data} == {"Done", "In Progress"}
 
 
+# ========== G3: issue create/update --parent ==========
+
+@responses.activate
+def test_issue_create_with_parent_exits_0_and_sends_parent_in_body(runner, app):
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/issue",
+        json={"key": "PROJ-99", "id": "200"},
+        status=201,
+    )
+    result = runner.invoke(app, ["issue", "create", "PROJ", "My task", "--parent", "EPIC-1", "--json"])
+    assert result.exit_code == 0
+    envelope = json.loads(result.stdout)
+    assert envelope["ok"] is True
+    assert envelope["data"]["parent_key"] == "EPIC-1"
+
+    sent_body = responses.calls[0].request.body
+    if isinstance(sent_body, bytes):
+        sent_body = sent_body.decode("utf-8")
+    payload = json.loads(sent_body)
+    assert payload["fields"]["parent"] == {"key": "EPIC-1"}
+
+
+@responses.activate
+def test_issue_update_with_parent_sends_parent_in_body(runner, app):
+    responses.put(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-10",
+        status=204,
+    )
+    result = runner.invoke(app, ["issue", "update", "PROJ-10", "--parent", "EPIC-2", "--json"])
+    assert result.exit_code == 0
+    envelope = json.loads(result.stdout)
+    assert envelope["data"]["parent_key"] == "EPIC-2"
+
+    sent_body = responses.calls[0].request.body
+    if isinstance(sent_body, bytes):
+        sent_body = sent_body.decode("utf-8")
+    payload = json.loads(sent_body)
+    assert payload["fields"]["parent"] == {"key": "EPIC-2"}
+
+
+@responses.activate
+def test_issue_update_with_parent_none_sends_null_parent(runner, app):
+    responses.put(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-10",
+        status=204,
+    )
+    result = runner.invoke(app, ["issue", "update", "PROJ-10", "--parent", "NONE", "--json"])
+    assert result.exit_code == 0
+    envelope = json.loads(result.stdout)
+    assert envelope["data"]["parent_key"] is None
+
+    sent_body = responses.calls[0].request.body
+    if isinstance(sent_body, bytes):
+        sent_body = sent_body.decode("utf-8")
+    payload = json.loads(sent_body)
+    assert payload["fields"]["parent"] is None
+
+
+@responses.activate
+def test_issue_create_classic_project_error_becomes_user_error(runner, app):
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/issue",
+        json={"errors": {"customfield_10014": "Epic Link is required"}},
+        status=400,
+    )
+    result = runner.invoke(app, ["issue", "create", "CLASSIC", "x", "--parent", "EPIC-1", "--json"])
+    assert result.exit_code == 1
+    envelope = _last_json_line(result.stderr)
+    assert envelope["ok"] is False
+    assert "classic" in envelope["error"].lower() or "classic-style" in envelope["error"].lower()
+    assert "original_error" in envelope
+    assert "parent_key" in envelope
+
+
 # ========== worklog ==========
 
 def test_worklog_import_missing_csv_exits_1(runner, app, tmp_path):
