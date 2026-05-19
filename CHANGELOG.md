@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `tjira issue create --parent / -P <EPIC-KEY>` to link a new issue to an Epic on creation.
+- `tjira issue update --parent <EPIC-KEY|NONE>` to re-parent or clear the parent of an existing issue. Pass the literal string `NONE` to detach the issue from its current Epic.
+- `tjira list projects` — list accessible Jira projects with `--limit` (default 50, max 1000) and `--type` filtering (e.g. `software`, `service_desk`, `business`).
+- `tjira list issue-types <project>` — discover issue types available in a project (e.g. Task, Bug, Story, Epic) using the modern createmeta endpoint.
+- `tjira list users <query>` — search Jira users by name fragment, with `--limit` and `--json` support. Email is `null` for privacy-restricted accounts.
+- `tjira list fields <project> <issue-type>` — discover fields (required and optional) for a create context, with `--required-only` filter and `--limit`. Performs a two-roundtrip flow: resolves the issue type name to an ID, then fetches its fields.
+- **Classic-project interception.** When Jira rejects a `--parent` operation because the project uses the legacy Epic Link field (`customfield_10014`), the CLI surfaces a clear `UserError` (exit 1) with a hint instead of a raw 400, and preserves the original Jira error under `"original_error"` in the JSON payload.
 - **Multi-profile support.** Multiple Jira instances can be managed from a single CLI:
   - `tjira profile add <name>` — create a profile (interactive prompts when no flags given, or `--domain/--email/--token` for non-interactive use).
   - `tjira profile add <name> --from-env` — migrate from existing `JIRA_DOMAIN/EMAIL/API_TOKEN` env vars into a named profile.
