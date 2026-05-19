@@ -242,6 +242,120 @@ def test_base_url_default_unchanged_when_env_unset(configured_profile):
     assert client_local.agile_url == "https://example.atlassian.net/rest/agile/1.0"
 
 
+# ==================== G1: parent_key + discovery methods ====================
+
+@responses.activate
+def test_create_issue_with_parent_key_includes_parent_in_payload(client):
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/issue",
+        json={"key": "PROJ-99", "id": "200"},
+        status=201,
+    )
+    result = client.create_issue("PROJ", "Task with parent", parent_key="EPIC-1")
+    assert result["key"] == "PROJ-99"
+
+    import json as _json
+    body = responses.calls[0].request.body
+    if isinstance(body, bytes):
+        body = body.decode("utf-8")
+    payload = _json.loads(body)
+    assert payload["fields"]["parent"] == {"key": "EPIC-1"}
+
+
+@responses.activate
+def test_create_issue_without_parent_key_omits_parent_field(client):
+    responses.post(
+        "https://example.atlassian.net/rest/api/3/issue",
+        json={"key": "PROJ-100", "id": "201"},
+        status=201,
+    )
+    client.create_issue("PROJ", "Task without parent")
+
+    import json as _json
+    body = responses.calls[0].request.body
+    if isinstance(body, bytes):
+        body = body.decode("utf-8")
+    payload = _json.loads(body)
+    assert "parent" not in payload["fields"]
+
+
+@responses.activate
+def test_get_projects_search_hits_project_search_endpoint(client):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/project/search",
+        json={"values": [{"key": "PROJ", "name": "My Project"}], "isLast": True},
+        status=200,
+    )
+    result = client.get_projects_search()
+    assert len(result) == 1
+    assert result[0]["key"] == "PROJ"
+
+    import urllib.parse
+    qs = urllib.parse.parse_qs(urllib.parse.urlparse(responses.calls[0].request.url).query)
+    assert qs["maxResults"] == ["50"]
+
+
+@responses.activate
+def test_get_projects_search_with_type_adds_typekey_param(client):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/project/search",
+        json={"values": [], "isLast": True},
+        status=200,
+    )
+    client.get_projects_search(project_type="software")
+
+    import urllib.parse
+    qs = urllib.parse.parse_qs(urllib.parse.urlparse(responses.calls[0].request.url).query)
+    assert qs["typeKey"] == ["software"]
+
+
+@responses.activate
+def test_get_createmeta_issuetypes_paginates_until_islast(client):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/createmeta/PROJ/issuetypes",
+        json={
+            "values": [{"id": "10001", "name": "Task"}],
+            "isLast": False,
+            "maxResults": 1,
+            "startAt": 0,
+            "total": 2,
+        },
+        status=200,
+    )
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/createmeta/PROJ/issuetypes",
+        json={
+            "values": [{"id": "10002", "name": "Bug"}],
+            "isLast": True,
+            "maxResults": 1,
+            "startAt": 1,
+            "total": 2,
+        },
+        status=200,
+    )
+    result = client.get_createmeta_issuetypes("PROJ")
+    assert len(result) == 2
+    assert result[0]["name"] == "Task"
+    assert result[1]["name"] == "Bug"
+    assert len(responses.calls) >= 2
+
+
+@responses.activate
+def test_get_createmeta_fields_hits_correct_endpoint(client):
+    responses.get(
+        "https://example.atlassian.net/rest/api/3/issue/createmeta/PROJ/issuetypes/10001",
+        json={"values": [{"key": "summary", "name": "Summary", "required": True}]},
+        status=200,
+    )
+    result = client.get_createmeta_fields("PROJ", "10001", max_results=100)
+    assert len(result) == 1
+    assert result[0]["key"] == "summary"
+
+    import urllib.parse
+    qs = urllib.parse.parse_qs(urllib.parse.urlparse(responses.calls[0].request.url).query)
+    assert qs["maxResults"] == ["100"]
+
+
 @responses.activate
 def test_search_user_worklogs_caches_account_id(client):
     """Calling twice must hit /myself only once."""

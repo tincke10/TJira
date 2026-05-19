@@ -100,6 +100,7 @@ class JiraClient:
         issue_type: str = "Task",
         description: str | None = None,
         assignee_id: str | None = None,
+        parent_key: str | None = None,
     ) -> dict:
         payload: dict[str, Any] = {
             "fields": {
@@ -112,6 +113,8 @@ class JiraClient:
             payload["fields"]["description"] = _plain_to_adf(description)
         if assignee_id:
             payload["fields"]["assignee"] = {"id": assignee_id}
+        if parent_key:
+            payload["fields"]["parent"] = {"key": parent_key}
         return self._request("POST", "issue", data=payload, expected=(201,)).json()
 
     def update_issue(self, issue_key: str, fields: dict) -> None:
@@ -232,8 +235,13 @@ class JiraClient:
     def get_myself(self) -> dict:
         return self._request("GET", "myself", expected=(200,)).json()
 
-    def search_users(self, query: str) -> list[dict]:
-        response = self._request("GET", "user/search", params={"query": query}, expected=(200,))
+    def search_users(self, query: str, max_results: int = 50) -> list[dict]:
+        response = self._request(
+            "GET",
+            "user/search",
+            params={"query": query, "maxResults": max_results},
+            expected=(200,),
+        )
         return response.json()
 
     # ==================== PROJECTS ====================
@@ -243,6 +251,47 @@ class JiraClient:
 
     def get_project(self, project_key: str) -> dict:
         return self._request("GET", f"project/{project_key}", expected=(200,)).json()
+
+    def get_projects_search(
+        self, *, limit: int = 50, project_type: str | None = None
+    ) -> list[dict]:
+        params: dict[str, Any] = {"maxResults": limit}
+        if project_type:
+            params["typeKey"] = project_type
+        response = self._request("GET", "project/search", params=params, expected=(200,))
+        return response.json().get("values", [])
+
+    # ==================== CREATEMETA ====================
+
+    def get_createmeta_issuetypes(self, project_key: str) -> list[dict]:
+        collected: list[dict] = []
+        start_at = 0
+        max_results = 50
+        while True:
+            response = self._request(
+                "GET",
+                f"issue/createmeta/{project_key}/issuetypes",
+                params={"startAt": start_at, "maxResults": max_results},
+                expected=(200,),
+            )
+            data = response.json()
+            page: list[dict] = data.get("values", [])
+            collected.extend(page)
+            if data.get("isLast", True) or not page:
+                break
+            start_at += len(page)
+        return collected
+
+    def get_createmeta_fields(
+        self, project_key: str, issuetype_id: str, *, max_results: int = 100
+    ) -> list[dict]:
+        response = self._request(
+            "GET",
+            f"issue/createmeta/{project_key}/issuetypes/{issuetype_id}",
+            params={"maxResults": max_results},
+            expected=(200,),
+        )
+        return response.json().get("values", [])
 
     # ==================== BOARDS / SPRINTS ====================
 
