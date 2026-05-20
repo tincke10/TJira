@@ -194,12 +194,22 @@ tjira log PROJ-123 45m "2026-04-20 09:00" --comment "Bug fix" --json
 tjira issue get PROJ-123                         # detail view
 tjira issue create PROJ "Implement feature X"    # create Task
 tjira issue create PROJ "Fix login" --type Bug --desc "Steps to reproduce..."
+tjira issue create PROJ "Implement login" --parent PROJ-5 --type Task   # link to Epic on creation
 tjira issue update PROJ-123 --summary "New title"
 tjira issue update PROJ-123 --status "In Progress"
 tjira issue update PROJ-123 --assign me
 tjira issue update PROJ-123 --comment "Done" --attach screenshot.png
+tjira issue update PROJ-123 --parent EPIC-7     # move issue under an Epic
+tjira issue update PROJ-123 --parent NONE        # detach from its current parent
 tjira issue transitions PROJ-123 --json          # available status changes
 ```
+
+**`--parent / -P`** accepts an Epic key (e.g. `PROJ-5`) to link the issue on creation or move it to a
+different Epic on update. Pass the literal string `NONE` to clear the parent relationship entirely.
+
+> **Classic Jira projects:** The `--parent` flag uses the next-gen parent field. Classic projects
+> that rely on `customfield_10014` (Epic Link) are not supported — the CLI will surface a clear
+> error message if it detects this situation.
 
 ### `tjira list` — search & discovery
 
@@ -217,6 +227,39 @@ tjira list filters
 tjira list filter-issues 10042 --json
 tjira list dashboards
 ```
+
+#### Discovery commands
+
+These four commands help you explore a Jira project before creating issues or building
+automation scripts. They are read-only and always accept `--json`.
+
+```bash
+# List accessible projects (paginated, optional type filter)
+tjira list projects --json
+tjira list projects --limit 100 --type software --json
+
+# Discover issue types available in a project
+tjira list issue-types PROJ --json
+
+# Search Jira users by name fragment (useful for --assign values)
+tjira list users "john" --json
+tjira list users "john" --limit 100
+
+# Discover fields for a specific issue type in a project
+# Returns required and optional fields with allowed values
+tjira list fields PROJ Task --json
+tjira list fields PROJ Task --required-only --json     # only required fields
+tjira list fields PROJ Story --limit 200 --json        # increase field limit
+```
+
+All discovery commands emit a JSON array to stdout with typed, normalized shapes:
+
+| Command | Output shape |
+| ------- | ------------ |
+| `list projects` | `{"key", "name", "type", "style"}` |
+| `list issue-types` | `{"id", "name", "subtask": bool, "description"}` |
+| `list users` | `{"account_id", "display_name", "email" \| null, "active": bool}` |
+| `list fields` | `{"name", "key", "required": bool, "type", "allowed_values": list \| null}` |
 
 ### `tjira worklog` — bulk CSV ops
 

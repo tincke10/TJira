@@ -9,10 +9,14 @@ import pytest
 from tjira.formatters import (
     emit,
     normalize_board,
+    normalize_field,
     normalize_filter,
     normalize_issue,
+    normalize_issuetype,
+    normalize_project,
     normalize_sprint,
     normalize_transition,
+    normalize_user,
     normalize_worklog,
 )
 
@@ -146,3 +150,84 @@ def test_emit_human_invokes_human_fn(capsys: pytest.CaptureFixture[str]):
 def test_emit_human_without_fn_prints_data(capsys: pytest.CaptureFixture[str]):
     emit("hello", as_json=False)
     assert capsys.readouterr().out.strip() == "hello"
+
+
+# ========== G2: new normalizers ==========
+
+def test_normalize_project_maps_all_fields():
+    raw = {"key": "PROJ", "name": "My Project", "projectTypeKey": "software", "style": "next-gen"}
+    result = normalize_project(raw)
+    assert result == {"key": "PROJ", "name": "My Project", "type": "software", "style": "next-gen"}
+
+
+def test_normalize_project_defaults_missing_keys_to_none():
+    result = normalize_project({"key": "PROJ"})
+    assert result["name"] is None
+    assert result["type"] is None
+    assert result["style"] is None
+
+
+def test_normalize_user_with_email():
+    raw = {
+        "accountId": "acc-1",
+        "displayName": "John Doe",
+        "emailAddress": "john@x.com",
+        "active": True,
+    }
+    result = normalize_user(raw)
+    assert result == {
+        "account_id": "acc-1",
+        "display_name": "John Doe",
+        "email": "john@x.com",
+        "active": True,
+    }
+
+
+def test_normalize_user_without_email_defaults_to_none():
+    raw = {"accountId": "acc-2", "displayName": "Jane", "active": False}
+    result = normalize_user(raw)
+    assert result["email"] is None
+    assert result["account_id"] == "acc-2"
+
+
+def test_normalize_issuetype_maps_all_fields():
+    raw = {"id": "10001", "name": "Task", "subtask": False, "description": "desc"}
+    result = normalize_issuetype(raw)
+    assert result == {"id": "10001", "name": "Task", "subtask": False, "description": "desc"}
+
+
+def test_normalize_issuetype_subtask_stays_as_bool():
+    result = normalize_issuetype({"id": "2", "name": "Sub-task", "subtask": True, "description": ""})
+    assert result["subtask"] is True
+
+
+def test_normalize_field_with_allowed_values():
+    raw = {
+        "name": "Priority",
+        "key": "priority",
+        "required": True,
+        "schema": {"type": "priority"},
+        "allowedValues": [
+            {"name": "High"},
+            {"value": "medium"},
+            {"id": "low-id"},
+        ],
+    }
+    result = normalize_field(raw)
+    assert result["allowed_values"] == ["High", "medium", "low-id"]
+    assert result["required"] is True
+    assert result["type"] == "priority"
+    assert result["key"] == "priority"
+
+
+def test_normalize_field_without_allowed_values():
+    raw = {"name": "Summary", "key": "summary", "required": True, "schema": {"type": "string"}}
+    result = normalize_field(raw)
+    assert result["allowed_values"] is None
+
+
+def test_normalize_field_missing_schema_type_defaults_to_none():
+    raw = {"name": "Custom", "key": "custom", "required": False}
+    result = normalize_field(raw)
+    assert result["type"] is None
+    assert result["allowed_values"] is None

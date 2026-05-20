@@ -10,6 +10,7 @@ Differences from `jira_client.py` (legacy, kept for backwards compatibility):
 from __future__ import annotations
 
 import os
+from datetime import date, datetime, time, timezone
 from typing import Any
 
 import requests
@@ -17,6 +18,7 @@ from requests.auth import HTTPBasicAuth
 
 from tjira.config import resolve_profile
 from tjira.errors import APIError
+from tjira.overlap import _parse_jira_started
 from tjira.profiles import Profile
 
 DEFAULT_TIMEOUT = float(os.getenv("JIRA_TIMEOUT", "30"))
@@ -28,14 +30,22 @@ class JiraClient:
     def __init__(self, profile: Profile | None = None) -> None:
         prof = profile or resolve_profile()
         self.profile = prof
-        self.base_url = f"https://{prof.domain}/rest/api/3"
-        self.agile_url = f"https://{prof.domain}/rest/agile/1.0"
+        # Env vars TJIRA_API_BASE_URL / TJIRA_AGILE_BASE_URL override the
+        # default Atlassian Cloud URLs. Useful for tests (point at a localhost
+        # mock server) and for Jira On-Premise / staging environments.
+        self.base_url = (
+            os.getenv("TJIRA_API_BASE_URL") or f"https://{prof.domain}/rest/api/3"
+        )
+        self.agile_url = (
+            os.getenv("TJIRA_AGILE_BASE_URL") or f"https://{prof.domain}/rest/agile/1.0"
+        )
         self.browse_url = f"https://{prof.domain}/browse"
         self.auth = HTTPBasicAuth(prof.email, prof.api_token)
         self.headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
+        self._account_id: str | None = None
 
     # ---------- internals ----------
 
@@ -90,6 +100,7 @@ class JiraClient:
         issue_type: str = "Task",
         description: str | None = None,
         assignee_id: str | None = None,
+        parent_key: str | None = None,
     ) -> dict:
         payload: dict[str, Any] = {
             "fields": {
@@ -102,6 +113,8 @@ class JiraClient:
             payload["fields"]["description"] = _plain_to_adf(description)
         if assignee_id:
             payload["fields"]["assignee"] = {"id": assignee_id}
+        if parent_key:
+            payload["fields"]["parent"] = {"key": parent_key}
         return self._request("POST", "issue", data=payload, expected=(201,)).json()
 
     def update_issue(self, issue_key: str, fields: dict) -> None:
@@ -152,6 +165,58 @@ class JiraClient:
     def delete_worklog(self, issue_key: str, worklog_id: str) -> None:
         self._request("DELETE", f"issue/{issue_key}/worklog/{worklog_id}", expected=(204,))
 
+    def get_account_id(self) -> str:
+        """Return the current user's accountId, cached after the first call."""
+        if self._account_id is None:
+            self._account_id = self.get_myself().get("accountId") or ""
+        return self._account_id
+
+    def search_user_worklogs(self, date_from: date, date_to: date) -> list[dict]:
+        """Return all worklogs authored by the current user in ``[date_from, date_to]``.
+
+        Each returned worklog has an extra ``_issue_key`` field with the issue
+        it belongs to, so callers can render conflicts without an extra lookup.
+        """
+        my_account_id = self.get_account_id()
+        jql = (
+            f"worklogAuthor = currentUser() "
+            f'AND worklogDate >= "{date_from.isoformat()}" '
+            f'AND worklogDate <= "{date_to.isoformat()}"'
+        )
+        issues = self.search_issues(jql, max_results=100)
+
+        # Window in UTC for filtering started timestamps. We accept anything
+        # whose start lies within the [date_from 00:00, date_to+1d 00:00) window
+        # in UTC — wide enough that timezone differences won't drop legitimate
+        # entries. Per-day precision is the contract.
+        win_start = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+        win_end = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+
+        out: list[dict] = []
+        for issue in issues:
+            key = issue.get("key")
+            if not key:
+                continue
+            for wl in self.get_worklogs(key):
+                author = (wl.get("author") or {}).get("accountId")
+                if author != my_account_id:
+                    continue
+                started_raw = wl.get("started")
+                if not started_raw:
+                    continue
+                try:
+                    started_dt = _parse_jira_started(started_raw)
+                except ValueError:
+                    continue
+                if started_dt.tzinfo is None:
+                    started_dt = started_dt.replace(tzinfo=timezone.utc)
+                started_utc = started_dt.astimezone(timezone.utc).replace(tzinfo=timezone.utc)
+                if not (win_start <= started_utc <= win_end):
+                    continue
+                wl["_issue_key"] = key
+                out.append(wl)
+        return out
+
     # ==================== SEARCH ====================
 
     def search_issues(self, jql: str, max_results: int = 50) -> list[dict]:
@@ -170,8 +235,13 @@ class JiraClient:
     def get_myself(self) -> dict:
         return self._request("GET", "myself", expected=(200,)).json()
 
-    def search_users(self, query: str) -> list[dict]:
-        response = self._request("GET", "user/search", params={"query": query}, expected=(200,))
+    def search_users(self, query: str, max_results: int = 50) -> list[dict]:
+        response = self._request(
+            "GET",
+            "user/search",
+            params={"query": query, "maxResults": max_results},
+            expected=(200,),
+        )
         return response.json()
 
     # ==================== PROJECTS ====================
@@ -181,6 +251,47 @@ class JiraClient:
 
     def get_project(self, project_key: str) -> dict:
         return self._request("GET", f"project/{project_key}", expected=(200,)).json()
+
+    def get_projects_search(
+        self, *, limit: int = 50, project_type: str | None = None
+    ) -> list[dict]:
+        params: dict[str, Any] = {"maxResults": limit}
+        if project_type:
+            params["typeKey"] = project_type
+        response = self._request("GET", "project/search", params=params, expected=(200,))
+        return response.json().get("values", [])
+
+    # ==================== CREATEMETA ====================
+
+    def get_createmeta_issuetypes(self, project_key: str) -> list[dict]:
+        collected: list[dict] = []
+        start_at = 0
+        max_results = 50
+        while True:
+            response = self._request(
+                "GET",
+                f"issue/createmeta/{project_key}/issuetypes",
+                params={"startAt": start_at, "maxResults": max_results},
+                expected=(200,),
+            )
+            data = response.json()
+            page: list[dict] = data.get("values", [])
+            collected.extend(page)
+            if data.get("isLast", True) or not page:
+                break
+            start_at += len(page)
+        return collected
+
+    def get_createmeta_fields(
+        self, project_key: str, issuetype_id: str, *, max_results: int = 100
+    ) -> list[dict]:
+        response = self._request(
+            "GET",
+            f"issue/createmeta/{project_key}/issuetypes/{issuetype_id}",
+            params={"maxResults": max_results},
+            expected=(200,),
+        )
+        return response.json().get("values", [])
 
     # ==================== BOARDS / SPRINTS ====================
 

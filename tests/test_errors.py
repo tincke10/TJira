@@ -9,7 +9,9 @@ import pytest
 from tjira.errors import (
     APIError,
     EXIT_API_ERROR,
+    EXIT_OVERLAP,
     EXIT_USER_ERROR,
+    OverlapError,
     UserError,
     fail,
 )
@@ -23,6 +25,39 @@ def test_user_error_exit_code_is_1():
 def test_api_error_exit_code_is_2():
     err = APIError("500 from jira")
     assert err.exit_code == EXIT_API_ERROR == 2
+
+
+def test_overlap_error_exit_code_is_3():
+    err = OverlapError("solape")
+    assert err.exit_code == EXIT_OVERLAP == 3
+
+
+def test_overlap_error_carries_structured_payload():
+    err = OverlapError(
+        "solape detectado",
+        payload={
+            "conflict": {"issue": "PROJ-1", "worklog_id": "42"},
+            "suggested_start": "2026-04-20T10:30:00.000+0000",
+        },
+    )
+    assert err.payload["conflict"]["issue"] == "PROJ-1"
+    assert err.payload["suggested_start"].startswith("2026-04-20T10:30")
+
+
+def test_fail_overlap_exits_3(capsys: pytest.CaptureFixture[str]):
+    err = OverlapError(
+        "Worklog overlap",
+        payload={"conflict": {"issue": "PROJ-9"}, "suggested_start": "2026-04-20T11:00:00.000+0000"},
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        fail(err, as_json=True)
+    assert exc_info.value.code == 3
+
+    captured = capsys.readouterr()
+    envelope = json.loads(captured.err)
+    assert envelope["ok"] is False
+    assert envelope["conflict"]["issue"] == "PROJ-9"
+    assert envelope["suggested_start"].startswith("2026-04-20T11:00")
 
 
 def test_error_payload_defaults_to_empty_dict():

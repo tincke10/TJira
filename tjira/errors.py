@@ -4,6 +4,8 @@ Conventions:
     0 -> OK
     1 -> User error (invalid args, file not found, missing config)
     2 -> Jira API error (4xx/5xx, network, timeout)
+    3 -> Worklog overlap (specific user error — IA can detect this code and
+         retry with the suggested_start from the error payload)
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from typing import Any
 EXIT_OK = 0
 EXIT_USER_ERROR = 1
 EXIT_API_ERROR = 2
+EXIT_OVERLAP = 3
 
 
 class TjiraError(Exception):
@@ -38,6 +41,17 @@ class APIError(TjiraError):
     """Jira API returned an error or could not be reached."""
 
     exit_code = EXIT_API_ERROR
+
+
+class OverlapError(TjiraError):
+    """A worklog overlaps with an existing one for the same user.
+
+    Payload SHOULD include ``conflict`` (the existing worklog dict) and
+    ``suggested_start`` (ISO datetime where the new worklog could start
+    without overlapping).
+    """
+
+    exit_code = EXIT_OVERLAP
 
 
 def fail(err: TjiraError, *, as_json: bool) -> None:

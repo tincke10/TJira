@@ -19,6 +19,21 @@ from tjira.formatters import (
 )
 
 
+def _intercept_classic_parent_error(fn, *args, _parent_key_hint: str | None = None, **kwargs):
+    """Call ``fn(*args, **kwargs)`` and re-raise classic-project 4xx as UserError."""
+    try:
+        return fn(*args, **kwargs)
+    except APIError as exc:
+        body_str = str(exc.payload.get("body", "")) + exc.message
+        if "customfield_10014" in body_str.lower():
+            raise UserError(
+                "This looks like a classic-style Jira project. "
+                "The Epic Link custom field (customfield_10014) is not supported by this CLI yet.",
+                payload={"original_error": exc.message, "parent_key": _parent_key_hint},
+            ) from exc
+        raise
+
+
 def register(app: typer.Typer) -> None:
     issue_app = typer.Typer(help="Issue management (create, update, get, transitions)")
     app.add_typer(issue_app, name="issue")
@@ -42,6 +57,9 @@ def register(app: typer.Typer) -> None:
         type_: str = typer.Option("Task", "--type", "-t", help="Type (Task, Bug, Story, Epic)"),
         description: Optional[str] = typer.Option(None, "--desc", "-d", help="Description"),
         assign: Optional[str] = typer.Option(None, "--assign", "-a", help="accountId or 'me'"),
+        parent: Optional[str] = typer.Option(
+            None, "--parent", "-P", help="Parent issue key to link, or NONE to clear"
+        ),
         json_out: bool = typer.Option(False, "--json", help="JSON output to stdout"),
     ) -> None:
         try:
@@ -51,12 +69,15 @@ def register(app: typer.Typer) -> None:
                 assignee_id = _resolve_assignee(client, assign)
 
             log(f"Creating {type_} in {project}...")
-            result = client.create_issue(
+            result = _intercept_classic_parent_error(
+                client.create_issue,
+                _parent_key_hint=parent,
                 project_key=project,
                 summary=summary,
                 issue_type=type_,
                 description=description,
                 assignee_id=assignee_id,
+                parent_key=parent,
             )
             data = {
                 "key": result.get("key"),
@@ -64,6 +85,7 @@ def register(app: typer.Typer) -> None:
                 "url": f"{client.browse_url}/{result.get('key')}",
                 "summary": summary,
                 "type": type_,
+                "parent_key": parent,
             }
             emit(
                 data,
@@ -91,11 +113,24 @@ def register(app: typer.Typer) -> None:
         ),
         comment: Optional[str] = typer.Option(None, "--comment", "-c", help="Add a comment"),
         attach: Optional[List[Path]] = typer.Option(None, "--attach", help="Files to attach"),
+        parent: Optional[str] = typer.Option(
+            None, "--parent", "-P", help="EPIC-KEY to link, NONE to clear"
+        ),
         json_out: bool = typer.Option(False, "--json", help="JSON output to stdout"),
     ) -> None:
         try:
             client = JiraClient()
             changes: dict[str, object] = {}
+
+            if parent is not None:
+                parent_fields = {"parent": None} if parent == "NONE" else {"parent": {"key": parent}}
+                _intercept_classic_parent_error(
+                    client.update_issue,
+                    key,
+                    parent_fields,
+                    _parent_key_hint=None if parent == "NONE" else parent,
+                )
+                changes["parent_key"] = None if parent == "NONE" else parent
 
             if summary:
                 client.update_issue(key, {"summary": summary})
@@ -149,7 +184,9 @@ def register(app: typer.Typer) -> None:
                 emit(normalize_issue(raw), as_json=json_out, human_fn=print_issue_detail)
                 return
 
-            data = {"key": key, "changes": changes}
+            data: dict[str, object] = {"key": key, "changes": changes}
+            if "parent_key" in changes:
+                data["parent_key"] = changes["parent_key"]
             emit(
                 data,
                 as_json=json_out,

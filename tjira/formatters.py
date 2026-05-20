@@ -113,6 +113,53 @@ def normalize_filter(flt: dict) -> dict:
     }
 
 
+def normalize_project(project: dict) -> dict:
+    return {
+        "key": project.get("key"),
+        "name": project.get("name"),
+        "type": project.get("projectTypeKey"),
+        "style": project.get("style"),
+    }
+
+
+def normalize_user(user: dict) -> dict:
+    email = user.get("emailAddress") or None
+    return {
+        "account_id": user.get("accountId"),
+        "display_name": user.get("displayName"),
+        "email": email,
+        "active": user.get("active"),
+    }
+
+
+def normalize_issuetype(issuetype: dict) -> dict:
+    return {
+        "id": issuetype.get("id"),
+        "name": issuetype.get("name"),
+        "subtask": issuetype.get("subtask"),
+        "description": issuetype.get("description"),
+    }
+
+
+def normalize_field(field: dict) -> dict:
+    raw_av = field.get("allowedValues")
+    if raw_av is None:
+        allowed_values = None
+    else:
+        allowed_values = [
+            next(v for v in (av.get("name"), av.get("value"), av.get("id")) if v is not None)
+            for av in raw_av
+        ]
+    schema = field.get("schema") or {}
+    return {
+        "name": field.get("name"),
+        "key": field.get("key"),
+        "required": field.get("required"),
+        "type": schema.get("type"),
+        "allowed_values": allowed_values,
+    }
+
+
 def normalize_transition(transition: dict) -> dict:
     return {
         "id": transition.get("id"),
@@ -220,3 +267,67 @@ def print_transitions_table(transitions: Iterable[dict]) -> None:
     for t in transitions:
         to = t.get("to") or "-"
         print(f"  [{t.get('id')}] {t.get('name')} -> {to}")
+
+
+def print_projects_table(projects: Iterable[dict]) -> None:
+    projects = list(projects)
+    if not projects:
+        print("No projects found")
+        return
+    print(f"{'KEY':<12} {'TYPE':<15} {'STYLE':<12} {'NAME'}")
+    print("-" * 80)
+    for p in projects:
+        key = (p.get("key") or "-")[:12]
+        type_ = (p.get("type") or "-")[:15]
+        style = (p.get("style") or "-")[:12]
+        name = (p.get("name") or "-")[:40]
+        print(f"{key:<12} {type_:<15} {style:<12} {name}")
+    print(f"\nTotal: {len(projects)} projects")
+
+
+def print_users_table(users: Iterable[dict]) -> None:
+    users = list(users)
+    if not users:
+        print("No users found")
+        return
+    print(f"{'ACCOUNT ID':<30} {'DISPLAY NAME':<25} {'EMAIL':<35} {'ACTIVE'}")
+    print("-" * 100)
+    for u in users:
+        account_id = (u.get("account_id") or "-")[:30]
+        display_name = (u.get("display_name") or "-")[:25]
+        email = (u.get("email") or "-")[:35]
+        active = "yes" if u.get("active") else "no"
+        print(f"{account_id:<30} {display_name:<25} {email:<35} {active}")
+    print(f"\nTotal: {len(users)} users")
+
+
+def print_issuetypes_table(issuetypes: Iterable[dict]) -> None:
+    issuetypes = list(issuetypes)
+    if not issuetypes:
+        print("No issue types found")
+        return
+    print(f"{'ID':<10} {'NAME':<20} {'SUBTASK':<10} {'DESCRIPTION'}")
+    print("-" * 80)
+    for it in issuetypes:
+        id_ = (str(it.get("id") or "-"))[:10]
+        name = (it.get("name") or "-")[:20]
+        subtask = "yes" if it.get("subtask") else "no"
+        desc = (it.get("description") or "-")[:40]
+        print(f"{id_:<10} {name:<20} {subtask:<10} {desc}")
+    print(f"\nTotal: {len(issuetypes)} issue types")
+
+
+def print_fields_table(fields: Iterable[dict]) -> None:
+    fields = list(fields)
+    if not fields:
+        log("No fields found")
+        return
+    print(f"{'NAME':<30} {'KEY':<25} {'REQUIRED':<10} {'TYPE'}")
+    print("-" * 80)
+    for f in fields:
+        name = (f.get("name") or "-")[:30]
+        key = (f.get("key") or "-")[:25]
+        required = "yes" if f.get("required") else "no"
+        type_ = (f.get("type") or "-")[:20]
+        print(f"{name:<30} {key:<25} {required:<10} {type_}")
+    print(f"\nTotal: {len(fields)} fields")
