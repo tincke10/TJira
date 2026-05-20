@@ -6,6 +6,8 @@ failures and returns dicts/lists on success. No real network calls.
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 import responses
 
@@ -115,8 +117,6 @@ def test_network_error_becomes_api_error(client):
 
 
 # ==================== search_user_worklogs ====================
-
-from datetime import date
 
 
 @responses.activate
