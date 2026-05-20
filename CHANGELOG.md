@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `tjira timer start <ISSUE> [--comment]` — start a worklog timer. Stores start time, profile, and optional comment in `$XDG_CONFIG_HOME/tjira/timer.json` (mode `0600`). Raises `UserError` (exit 1) if a timer is already active.
+- `tjira timer stop [--force]` — stop the timer and post a worklog with the elapsed time (rounded to the nearest minute via `format_time_spent`). Runs an overlap pre-check before posting; `--force` bypasses the overlap check only (cross-profile safeguard is always enforced). Exit 2 on API error preserves the state file for retry.
+- `tjira timer status` — show the running timer (issue key, elapsed, started_at) or empty state. `--json` returns `{"ok": true, "data": null}` when no timer is active.
+- `tjira timer cancel` — discard the timer without posting a worklog (idempotent; exit 0 when no timer is active).
+- `format_time_spent(td)` helper in `tjira.overlap` — converts a `timedelta` to a Jira-style string (`"1h 30m"`, `"45m"`, etc.) using banker's rounding, clamped to a minimum of `"1m"`. Symmetric to `parse_time_spent`.
+- **Claude Code integration** via `.claude/hooks/tjira-timer-hook.sh` + `.claude/settings.json` — auto-starts the timer when opening Claude Code on a Jira-tagged branch (`feat/PROJ-123-...`, `fix/PROJ-42`, etc.) and stops it on session end. Hook is POSIX `sh`, always exits 0, and is a no-op when `tjira` is not on PATH.
 - `tjira issue create --parent / -P <EPIC-KEY>` to link a new issue to an Epic on creation.
 - `tjira issue update --parent <EPIC-KEY|NONE>` to re-parent or clear the parent of an existing issue. Pass the literal string `NONE` to detach the issue from its current Epic.
 - `tjira list projects` — list accessible Jira projects with `--limit` (default 50, max 1000) and `--type` filtering (e.g. `software`, `service_desk`, `business`).
