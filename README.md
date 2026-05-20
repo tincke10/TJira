@@ -22,7 +22,7 @@
 
 Manage Jira from the terminal with output designed for **humans _and_ AI agents**.
 
-- **One CLI, four verbs** — `log`, `issue`, `list`, `worklog`. That's it.
+- **One CLI, five verbs** — `log`, `issue`, `list`, `worklog`, `timer`. That's it.
 - **Multi-account** — store as many Jira credentials as you need (`tjira profile add`), switch with one command (`tjira switch`), or override per-invocation (`tjira --profile work …`).
 - **JSON-first** — add `--json` to any command and get a stable, typed envelope.
 - **Script-safe** — exit codes `0/1/2`, data on stdout, logs on stderr. Pipe it into `jq`, wire it into CI, or let Claude / GPT call it as a tool.
@@ -285,6 +285,104 @@ tjira switch personal                   # change active profile
 tjira --profile work list issues        # one-shot override; warns on stderr
 ```
 
+### `tjira timer` — time tracking
+
+Track time spent on issues without leaving the terminal. Start a timer when you
+begin work, stop it when you are done — the elapsed time is automatically
+rounded to the nearest minute and posted as a Jira worklog.
+
+```bash
+# Start a timer for an issue (stores start time locally; no network call)
+tjira timer start PROJ-123
+tjira timer start PROJ-123 --comment "Implementing auth"
+
+# Check the running timer
+tjira timer status
+tjira timer status --json
+
+# Stop the timer and post a worklog (runs overlap pre-check by default)
+tjira timer stop
+tjira timer stop --json
+tjira timer stop --force            # skip overlap pre-check
+
+# Discard the timer without posting a worklog
+tjira timer cancel
+tjira timer cancel --json
+```
+
+**Flags:**
+
+| Flag | Command | Description |
+| ---- | ------- | ----------- |
+| `--comment "..."` | `start` | Worklog comment; stored and applied when you run `stop` |
+| `--force` | `stop` | Skip the overlap pre-check (does NOT bypass the cross-profile safeguard) |
+| `--json` | all | JSON envelope on stdout |
+
+**Exit codes for `timer stop`:** `0` OK · `1` no active timer or cross-profile
+mismatch · `2` Jira API error (timer file preserved for retry) · `3` overlap detected.
+
+**State file:** `$XDG_CONFIG_HOME/tjira/timer.json` (fallback `~/.config/tjira/timer.json`),
+written atomically with `0600` permissions. A single timer is supported at a time.
+
+**Known v1 limitations:**
+- Concurrent `tjira` processes racing on `timer.json` is last-write-wins (single-user, single-machine use case).
+- `--force` scoped strictly to the overlap pre-check; cross-profile mismatch always requires an explicit `tjira switch <profile>` or `tjira timer cancel`.
+
+#### Claude Code integration
+
+TJira ships a Claude Code hook that auto-manages the timer for you. When you
+open Claude Code in a repository on a Jira-tagged branch (`feat/PROJ-123-...`,
+`fix/PROJ-123`, etc.) the hook starts a timer automatically. When your Claude
+session ends (`Stop` event) it stops the timer and posts the worklog.
+
+**How it works:**
+
+1. Claude Code invokes `.claude/hooks/tjira-timer-hook.sh SessionStart` on session open.
+2. The script reads `cwd` from the hook's stdin JSON, resolves the current git branch, and extracts the issue key via the pattern `(feat|fix|chore|refactor|test|docs)/PROJ-123[-_/...]`.
+3. If no timer is currently active it calls `tjira timer start <KEY>`.
+4. On session end (`Stop`) it calls `tjira timer stop --json`, posting the elapsed worklog.
+
+**Install (project-level — already done):**
+
+The hook is pre-configured in `.claude/settings.json` at the repo root. No
+action needed; it fires automatically for anyone with `tjira` on PATH when they
+open Claude Code in this repository.
+
+**Promote to user-global (optional):**
+
+If you want the hook to fire for **all** your projects, copy the hook config
+into your user-level Claude settings:
+
+```bash
+# Merge SessionStart + Stop entries into ~/.claude/settings.json
+# (create the file if it does not exist)
+cat .claude/settings.json >> ~/.claude/settings.json
+# Then edit ~/.claude/settings.json to deduplicate if you already had hooks.
+```
+
+> **Warning:** A user-global hook invokes `tjira` on every Claude session start
+> in every directory. The branch-name regex will filter most calls, but `tjira`
+> still runs. Accept this only if you work primarily on Jira projects.
+
+**Requirements:**
+
+- `tjira` must be on `PATH` when Claude Code launches. Install globally with
+  `pipx install .` or activate the project venv before launching Claude.
+- If `tjira` is not found the hook exits 0 silently — it never blocks your session.
+
+**Branch naming convention:**
+
+The hook recognises branches that match:
+
+```
+(feat|fix|chore|refactor|test|docs)/<PROJECT>-<NUMBER>[-_/<rest>]
+```
+
+Examples that trigger the hook: `feat/PROJ-123`, `fix/PROJ-42-login-bug`,
+`chore/MYAPP-7_update-deps`.
+
+Examples that do NOT trigger: `main`, `develop`, `hotfix/some-fix` (no issue key).
+
 ## Shell Completion
 
 Tab-completion is built in (courtesy of Typer). Install it once per shell:
@@ -305,6 +403,7 @@ completion script without installing, run `tjira --show-completion`.
 | Exit `0`     | Success                                                          |
 | Exit `1`     | User error (bad args, missing env, invalid date…)                |
 | Exit `2`     | Jira/API error (network, 4xx, 5xx)                               |
+| Exit `3`     | Worklog overlap detected (`tjira log` / `tjira timer stop`)      |
 
 **JSON envelope on success:**
 
@@ -334,6 +433,8 @@ TJira/
 │   ├── client.py             # Jira REST client (APIError on failures)
 │   ├── config.py             # Active-profile resolution + override plumbing
 │   ├── profiles.py           # Profile dataclass + TOML-backed ProfileStore
+│   ├── timer.py              # TimerState + TimerStore (atomic, XDG-aware)
+│   ├── overlap.py            # Overlap detection + format_time_spent helper
 │   ├── errors.py             # Exit codes + typed exceptions
 │   ├── formatters.py         # Human/JSON output normalizers
 │   ├── tz.py                 # Timezone-aware datetimes
@@ -344,7 +445,13 @@ TJira/
 │       ├── list_cmd.py       # tjira list {issues,boards,sprints,...}
 │       ├── worklog.py        # tjira worklog {import,delete}
 │       ├── profile.py        # tjira profile {add,list,current,rm}
-│       └── switch.py         # tjira switch <name>
+│       ├── switch.py         # tjira switch <name>
+│       └── timer.py          # tjira timer {start,stop,status,cancel}
+│
+├── .claude/
+│   ├── settings.json         # Claude Code hook registration (project-level)
+│   └── hooks/
+│       └── tjira-timer-hook.sh   # POSIX sh hook — auto-manages timer on SessionStart/Stop
 │
 ├── tests/                    # pytest suite (config, profiles, client, CLI, tz, formatters)
 ├── legacy/                   # Pre-unification scripts (deprecated, still work)
