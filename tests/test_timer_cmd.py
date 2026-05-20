@@ -163,6 +163,16 @@ def test_timer_start_while_active_exits_1(runner, app, configured_profile) -> No
     assert data["issue_key"] == "PROJ-456"
 
 
+# ==================== REQ-1.7 — start with no profile configured ====================
+
+def test_timer_start_no_profile_configured_exits_1(runner, app) -> None:
+    """start when no profile is configured → exit 1, no state file written (REQ-1.7)."""
+    result = runner.invoke(app, ["timer", "start", "PROJ-1", "--json"])
+    assert result.exit_code == 1
+    assert "No Jira profile configured" in result.stderr
+    assert not default_timer_state_path().exists()
+
+
 # ==================== T3.6 — timer status no timer ====================
 
 def test_timer_status_no_timer_human(runner, app, configured_profile) -> None:
