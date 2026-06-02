@@ -384,3 +384,88 @@ def test_e2e_list_fields_two_roundtrip_flow(tjira_env, httpserver):
     priority_field = next((f for f in fields if f["key"] == "priority"), None)
     assert priority_field is not None
     assert priority_field["allowed_values"] == ["High", "Medium", "Low"]
+
+
+# ==================== T5.1: timer start -> stop -> POST /worklog ====================
+
+def test_e2e_timer_start_then_stop_posts_worklog(tjira_env, httpserver):
+    """T5.1: full start → stop subprocess flow.
+
+    1. `tjira timer start PROJ-1 --json` → exit 0, JSON envelope.
+    2. `tjira timer stop --json` → exit 0; asserts timeSpent + started in wire body;
+       asserts worklog_id in stdout JSON.
+    """
+    # -- stop will run an overlap pre-check: GET /myself + POST /search/jql --
+    httpserver.expect_ordered_request(
+        "/rest/api/3/myself", method="GET"
+    ).respond_with_json({"accountId": "me-123"})
+
+    httpserver.expect_ordered_request(
+        "/rest/api/3/search/jql", method="POST"
+    ).respond_with_json({"issues": []})
+
+    httpserver.expect_ordered_request(
+        "/rest/api/3/issue/PROJ-1/worklog", method="POST"
+    ).respond_with_json(
+        {"id": "88", "timeSpent": "1m", "started": "2026-05-20T09:00:00.000+0000"},
+        status=201,
+    )
+
+    # -- start timer --
+    start_result = _run(tjira_env, "timer", "start", "PROJ-1", "--json")
+    assert start_result.returncode == 0, f"timer start stderr: {start_result.stderr}"
+    start_envelope = json.loads(start_result.stdout)
+    assert start_envelope["ok"] is True
+    assert start_envelope["data"]["issue_key"] == "PROJ-1"
+    recorded_started_at = start_envelope["data"]["started_at"]
+
+    # -- stop timer (uses overlap pre-check then posts worklog) --
+    stop_result = _run(tjira_env, "timer", "stop", "--json")
+    assert stop_result.returncode == 0, f"timer stop stderr: {stop_result.stderr}"
+    stop_envelope = json.loads(stop_result.stdout)
+    assert stop_envelope["ok"] is True
+    data = stop_envelope["data"]
+    assert data["issue_key"] == "PROJ-1"
+    assert data["worklog_id"] == "88"
+    assert "time_spent" in data     # e.g. "1m" (elapsed < 1 min in test)
+    assert "started_at" in data
+
+    # Verify the wire payload sent to Jira had the required fields.
+    worklog_requests = [
+        (req, resp)
+        for req, resp in httpserver.log
+        if req.method == "POST" and "worklog" in str(req.path)
+    ]
+    assert len(worklog_requests) == 1, "Expected exactly one worklog POST"
+    body = json.loads(worklog_requests[0][0].data)
+    assert "timeSpent" in body, f"Missing timeSpent in wire body: {body}"
+    assert "started" in body, f"Missing started in wire body: {body}"
+    # started in wire must match what timer start recorded
+    assert body["started"] == recorded_started_at
+
+
+# ==================== T5.2: timer start -> cancel -> no /worklog POST ====================
+
+def test_e2e_timer_start_then_cancel_no_worklog_post(tjira_env, httpserver):
+    """T5.2: start → cancel subprocess. httpserver received ZERO requests to POST /worklog."""
+    # -- start timer (no server interaction) --
+    start_result = _run(tjira_env, "timer", "start", "PROJ-1", "--json")
+    assert start_result.returncode == 0, f"timer start stderr: {start_result.stderr}"
+
+    # -- cancel timer (must NOT hit any Jira endpoints) --
+    cancel_result = _run(tjira_env, "timer", "cancel", "--json")
+    assert cancel_result.returncode == 0, f"timer cancel stderr: {cancel_result.stderr}"
+    cancel_envelope = json.loads(cancel_result.stdout)
+    assert cancel_envelope["ok"] is True
+    assert cancel_envelope["data"]["cancelled"] is True
+    assert cancel_envelope["data"]["issue_key"] == "PROJ-1"
+
+    # Assert httpserver received ZERO requests to worklog endpoint.
+    worklog_posts = [
+        (req, resp)
+        for req, resp in httpserver.log
+        if req.method == "POST" and "worklog" in str(req.path)
+    ]
+    assert len(worklog_posts) == 0, (
+        f"Expected no worklog POST but got: {[str(r.path) for r, _ in worklog_posts]}"
+    )
