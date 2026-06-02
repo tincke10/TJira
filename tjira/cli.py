@@ -17,11 +17,13 @@ import sys
 import typer
 
 from tjira import __version__
+from tjira.commands import board as board_cmd
 from tjira.commands import doctor as doctor_cmd
 from tjira.commands import issue as issue_cmd
 from tjira.commands import list_cmd
 from tjira.commands import log as log_cmd
 from tjira.commands import profile as profile_cmd
+from tjira.commands import sprint as sprint_cmd
 from tjira.commands import switch as switch_cmd
 from tjira.commands import timer as timer_cmd
 from tjira.commands import worklog as worklog_cmd
@@ -139,6 +141,8 @@ doctor_cmd.register(app)
 profile_cmd.register(app)
 switch_cmd.register(app)
 timer_cmd.register(app)
+sprint_cmd.register(app)
+board_cmd.register(app)
 
 
 if __name__ == "__main__":
