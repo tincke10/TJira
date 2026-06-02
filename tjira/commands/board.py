@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import typer
 
 from tjira.client import JiraClient
@@ -30,9 +32,8 @@ def register(app: typer.Typer) -> None:
                 validate_issue_key(key)
 
             # Step 2: Validate labels — no whitespace
-            import re as _re
             for label, flag in ((from_label, "--from"), (to_label, "--to")):
-                if _re.search(r"\s", label):
+                if re.search(r"\s", label):
                     raise UserError(
                         f"Labels cannot contain whitespace: {label!r} (given via {flag})",
                         payload={"label": label, "flag": flag},
