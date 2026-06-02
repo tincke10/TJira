@@ -11,7 +11,6 @@ Stop semantics (design decision 6, in exact order):
 
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from typing import Optional
 
@@ -24,17 +23,7 @@ from tjira.formatters import emit, log
 from tjira.overlap import find_overlap, format_time_spent, worklog_interval
 from tjira.timer import TimerStore
 from tjira.tz import get_timezone, to_jira_datetime
-
-# Jira issue key pattern: one or more uppercase letters, a dash, one or more digits.
-_ISSUE_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]+-[0-9]+$")
-
-
-def _validate_issue_key(key: str) -> None:
-    if not key or not _ISSUE_KEY_RE.match(key):
-        raise UserError(
-            f"Invalid issue key: {key!r}. Expected format: PROJ-123",
-            payload={"issue_key": key},
-        )
+from tjira.validation import validate_issue_key as _validate_issue_key
 
 
 def _now() -> datetime:
