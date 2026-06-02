@@ -22,7 +22,7 @@
 
 Manage Jira from the terminal with output designed for **humans _and_ AI agents**.
 
-- **One CLI, five verbs** — `log`, `issue`, `list`, `worklog`, `timer`. That's it.
+- **One CLI, a handful of verbs** — `log`, `issue`, `list`, `worklog`, `timer`, `sprint`, `board`. That's it.
 - **Multi-account** — store as many Jira credentials as you need (`tjira profile add`), switch with one command (`tjira switch`), or override per-invocation (`tjira --profile work …`).
 - **JSON-first** — add `--json` to any command and get a stable, typed envelope.
 - **Script-safe** — exit codes `0/1/2`, data on stdout, logs on stderr. Pipe it into `jq`, wire it into CI, or let Claude / GPT call it as a tool.
@@ -271,6 +271,49 @@ tjira worklog delete worklogs.csv --dry-run       # preview deletion
 
 See [ESTRUCTURA_CSV.md](ESTRUCTURA_CSV.md) for the CSV schema.
 
+### `tjira sprint` — assign issues to a sprint
+
+Add one or more issues to a sprint. Because epics span multiple sprints, an epic
+cannot be added directly — pass `--children` to expand each epic into its child
+issues instead.
+
+```bash
+tjira sprint add 1234 PROJ-1 PROJ-2            # add two issues to sprint 1234
+tjira sprint add 1234 PROJ-1 --json            # JSON envelope on stdout
+tjira sprint add 1234 EPIC-9 --children        # expand the epic → add its children
+tjira sprint add 1234 EPIC-9 PROJ-7 --children # mix epics and plain issues (deduped)
+```
+
+**Behavior:**
+
+- Without `--children`, passing an epic key fails with a clear error telling you to re-run with `--children`.
+- With `--children`, each epic is expanded to its child issues; epics with no children are skipped with a warning on stderr.
+- Final keys are deduplicated (first-seen order). The JSON payload reports `added`, `expanded_from_epics` (epic → child keys), and `chunks` (the batches sent to Jira).
+
+### `tjira board` — move issues between boards
+
+Boards in the same project are backed by JQL filters that usually key off a
+**label**. `tjira board move` swaps that label across one or more issues —
+removing the source board's label and adding the destination's — so the issues
+disappear from one board and appear on the other.
+
+```bash
+tjira board move PROJ-1 --from backlog --to in-progress
+tjira board move PROJ-1 PROJ-2 PROJ-3 --from team-a --to team-b
+tjira board move PROJ-1 --from backlog --to in-progress --json
+```
+
+**Flags & rules:**
+
+| Flag | Description |
+| ---- | ----------- |
+| `--from LABEL` | Source board's label — **removed** from each issue (required) |
+| `--to LABEL` | Destination board's label — **added** to each issue (required) |
+| `--json` | JSON envelope on stdout |
+
+- Labels cannot contain whitespace, and `--from` must differ from `--to` (case-sensitive) — both are rejected with a `UserError` before any network call.
+- Every issue is attempted; on partial failure the command exits `2` (API error) with a payload listing both `moved` and `failed` issues, so nothing is silently dropped.
+
 ### `tjira profile` & `tjira switch` — manage Jira accounts
 
 ```bash
@@ -435,6 +478,7 @@ TJira/
 │   ├── profiles.py           # Profile dataclass + TOML-backed ProfileStore
 │   ├── timer.py              # TimerState + TimerStore (atomic, XDG-aware)
 │   ├── overlap.py            # Overlap detection + format_time_spent helper
+│   ├── validation.py         # ISSUE_KEY_RE + validate_issue_key (shared)
 │   ├── errors.py             # Exit codes + typed exceptions
 │   ├── formatters.py         # Human/JSON output normalizers
 │   ├── tz.py                 # Timezone-aware datetimes
@@ -446,7 +490,9 @@ TJira/
 │       ├── worklog.py        # tjira worklog {import,delete}
 │       ├── profile.py        # tjira profile {add,list,current,rm}
 │       ├── switch.py         # tjira switch <name>
-│       └── timer.py          # tjira timer {start,stop,status,cancel}
+│       ├── timer.py          # tjira timer {start,stop,status,cancel}
+│       ├── sprint.py         # tjira sprint add (epic expansion via --children)
+│       └── board.py          # tjira board move (label swap between boards)
 │
 ├── .claude/
 │   ├── settings.json         # Claude Code hook registration (project-level)
