@@ -374,3 +374,229 @@ def test_search_user_worklogs_caches_account_id(client):
 
     myself_calls = [c for c in responses.calls if c.request.url.endswith("/myself")]
     assert len(myself_calls) == 1
+
+
+# ==================== add_issues_to_sprint ====================
+
+
+@responses.activate
+def test_add_issues_to_sprint_single_chunk_one_post(client):
+    """SA-CL-1: 3 keys → exactly 1 POST; correct body; correct return dict."""
+    import json as _json
+
+    responses.post(
+        "https://example.atlassian.net/rest/agile/1.0/sprint/42/issue",
+        status=204,
+    )
+    result = client.add_issues_to_sprint(42, ["PROJ-1", "PROJ-2", "PROJ-3"])
+
+    assert len(responses.calls) == 1
+    body = responses.calls[0].request.body
+    if isinstance(body, bytes):
+        body = body.decode("utf-8")
+    payload = _json.loads(body)
+    assert payload == {"issues": ["PROJ-1", "PROJ-2", "PROJ-3"]}
+    assert result == {"sprint_id": 42, "added": ["PROJ-1", "PROJ-2", "PROJ-3"], "chunks": 1}
+
+
+@responses.activate
+def test_add_issues_to_sprint_exactly_50_keys_one_post(client):
+    """SA-CL-2: 50 keys → boundary case, exactly 1 POST."""
+    import json as _json
+
+    responses.post(
+        "https://example.atlassian.net/rest/agile/1.0/sprint/42/issue",
+        status=204,
+    )
+    keys = [f"PROJ-{i}" for i in range(50)]
+    result = client.add_issues_to_sprint(42, keys)
+
+    assert len(responses.calls) == 1
+    body = responses.calls[0].request.body
+    if isinstance(body, bytes):
+        body = body.decode("utf-8")
+    payload = _json.loads(body)
+    assert len(payload["issues"]) == 50
+    assert result["chunks"] == 1
+    assert len(result["added"]) == 50
+
+
+@responses.activate
+def test_add_issues_to_sprint_51_keys_two_posts(client):
+    """SA-CL-3: 51 keys → 2 POSTs; first chunk 50, second chunk 1; chunks=2 in return."""
+    import json as _json
+
+    responses.post(
+        "https://example.atlassian.net/rest/agile/1.0/sprint/42/issue",
+        status=204,
+    )
+    responses.post(
+        "https://example.atlassian.net/rest/agile/1.0/sprint/42/issue",
+        status=204,
+    )
+    keys = [f"PROJ-{i}" for i in range(51)]
+    result = client.add_issues_to_sprint(42, keys)
+
+    assert len(responses.calls) == 2
+
+    body_1 = responses.calls[0].request.body
+    if isinstance(body_1, bytes):
+        body_1 = body_1.decode("utf-8")
+    payload_1 = _json.loads(body_1)
+    assert len(payload_1["issues"]) == 50
+    assert payload_1["issues"] == keys[:50]
+
+    body_2 = responses.calls[1].request.body
+    if isinstance(body_2, bytes):
+        body_2 = body_2.decode("utf-8")
+    payload_2 = _json.loads(body_2)
+    assert len(payload_2["issues"]) == 1
+    assert payload_2["issues"] == [keys[50]]
+
+    assert result["chunks"] == 2
+    assert result["added"] == keys
+
+
+@responses.activate
+def test_add_issues_to_sprint_uses_agile_base_url(client):
+    """SA-CL-4: POST URL must contain /rest/agile/1.0/, not /rest/api/3/."""
+    responses.post(
+        "https://example.atlassian.net/rest/agile/1.0/sprint/99/issue",
+        status=204,
+    )
+    client.add_issues_to_sprint(99, ["PROJ-5"])
+
+    url = responses.calls[0].request.url
+    assert "/rest/agile/1.0/" in url
+    assert "/rest/api/3/" not in url
+
+
+def test_add_issues_to_sprint_empty_list_no_http_calls(client):
+    """SA-CL-5: empty list → 0 HTTP calls; return summary dict with chunks=0."""
+    result = client.add_issues_to_sprint(42, [])
+
+    assert result == {"sprint_id": 42, "added": [], "chunks": 0}
+    # No responses registered; if a request was made it would raise ConnectionError.
+
+
+@responses.activate
+def test_add_issues_to_sprint_api_error_on_400(client):
+    """SA-CL-6: Jira 400 → APIError with exit_code==2."""
+    responses.post(
+        "https://example.atlassian.net/rest/agile/1.0/sprint/42/issue",
+        json={"errorMessages": ["Sprint is closed"]},
+        status=400,
+    )
+    with pytest.raises(APIError) as exc_info:
+        client.add_issues_to_sprint(42, ["PROJ-1"])
+    assert exc_info.value.exit_code == 2
+
+
+# ==================== move_issue_labels ====================
+
+
+@responses.activate
+def test_move_issue_labels_body_uses_update_verb_never_fields(client):
+    """BM-CL-1: body must be {"update": {"labels": [...]}} and NOT contain "fields"."""
+    import json as _json
+
+    responses.put(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-1",
+        status=204,
+    )
+    client.move_issue_labels("PROJ-1", add="boardB", remove="boardA")
+
+    body = responses.calls[0].request.body
+    if isinstance(body, bytes):
+        body = body.decode("utf-8")
+    payload = _json.loads(body)
+
+    assert payload == {"update": {"labels": [{"remove": "boardA"}, {"add": "boardB"}]}}
+    assert "fields" not in payload
+
+
+@responses.activate
+def test_move_issue_labels_ops_are_dicts_not_strings(client):
+    """BM-CL-2: each element in body["update"]["labels"] must be a dict, not a string."""
+    import json as _json
+
+    responses.put(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-1",
+        status=204,
+    )
+    client.move_issue_labels("PROJ-1", add="boardB", remove="boardA")
+
+    body = responses.calls[0].request.body
+    if isinstance(body, bytes):
+        body = body.decode("utf-8")
+    payload = _json.loads(body)
+    ops = payload["update"]["labels"]
+    for op in ops:
+        assert isinstance(op, dict), f"Expected dict op, got: {op!r}"
+
+
+@responses.activate
+def test_move_issue_labels_only_add(client):
+    """BM-CL-3: only add=... → single {"add": ...} op, no {"remove": ...} op."""
+    import json as _json
+
+    responses.put(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-1",
+        status=204,
+    )
+    client.move_issue_labels("PROJ-1", add="boardB", remove=None)
+
+    body = responses.calls[0].request.body
+    if isinstance(body, bytes):
+        body = body.decode("utf-8")
+    payload = _json.loads(body)
+    ops = payload["update"]["labels"]
+    assert ops == [{"add": "boardB"}]
+    assert not any("remove" in op for op in ops)
+
+
+@responses.activate
+def test_move_issue_labels_only_remove(client):
+    """BM-CL-4: only remove=... → single {"remove": ...} op, no {"add": ...} op."""
+    import json as _json
+
+    responses.put(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-1",
+        status=204,
+    )
+    client.move_issue_labels("PROJ-1", add=None, remove="boardA")
+
+    body = responses.calls[0].request.body
+    if isinstance(body, bytes):
+        body = body.decode("utf-8")
+    payload = _json.loads(body)
+    ops = payload["update"]["labels"]
+    assert ops == [{"remove": "boardA"}]
+    assert not any("add" in op for op in ops)
+
+
+@responses.activate
+def test_move_issue_labels_uses_platform_base_url(client):
+    """BM-CL-5: PUT URL must contain /rest/api/3/, not /rest/agile/."""
+    responses.put(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-1",
+        status=204,
+    )
+    client.move_issue_labels("PROJ-1", add="x", remove="y")
+
+    url = responses.calls[0].request.url
+    assert "/rest/api/3/" in url
+    assert "/rest/agile/" not in url
+
+
+@responses.activate
+def test_move_issue_labels_api_error_on_404(client):
+    """BM-CL-6: Jira 404 → APIError with exit_code==2."""
+    responses.put(
+        "https://example.atlassian.net/rest/api/3/issue/PROJ-X",
+        json={"errorMessages": ["Issue not found"]},
+        status=404,
+    )
+    with pytest.raises(APIError) as exc_info:
+        client.move_issue_labels("PROJ-X", add="b", remove="a")
+    assert exc_info.value.exit_code == 2

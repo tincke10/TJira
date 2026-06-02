@@ -338,6 +338,51 @@ class JiraClient:
         )
         return response.json().get("issues", [])
 
+    def add_issues_to_sprint(self, sprint_id: int, issue_keys: list[str]) -> dict:
+        """Assign issues to a sprint, chunking into batches of <=50 (Jira hard cap).
+
+        POST agile/1.0/sprint/{sprint_id}/issue  body {"issues": [keys...]}  -> 204.
+        Returns {"sprint_id": sprint_id, "added": [...all keys...], "chunks": N}.
+        Empty issue_keys: returns summary dict immediately with 0 HTTP calls.
+        """
+        if not issue_keys:
+            return {"sprint_id": sprint_id, "added": [], "chunks": 0}
+
+        _CHUNK = 50
+        chunks = 0
+        for i in range(0, len(issue_keys), _CHUNK):
+            chunk = issue_keys[i : i + _CHUNK]
+            self._request(
+                "POST",
+                f"sprint/{sprint_id}/issue",
+                base=self.agile_url,
+                data={"issues": chunk},
+                expected=(204,),
+            )
+            chunks += 1
+
+        return {"sprint_id": sprint_id, "added": list(issue_keys), "chunks": chunks}
+
+    def move_issue_labels(
+        self, issue_key: str, add: str | None = None, remove: str | None = None
+    ) -> None:
+        """Swap labels on an issue using the ``update`` verb (preserves other labels).
+
+        PUT api/3/issue/{issue_key}  body {"update": {"labels": [ops]}}  -> 204.
+        Uses the ``update`` verb (NEVER ``fields``) so existing labels are not clobbered.
+        """
+        ops: list[dict] = []
+        if remove:
+            ops.append({"remove": remove})
+        if add:
+            ops.append({"add": add})
+        self._request(
+            "PUT",
+            f"issue/{issue_key}",
+            data={"update": {"labels": ops}},
+            expected=(204,),
+        )
+
     # ==================== FILTERS ====================
 
     def get_filters(self, filter_name: str | None = None) -> list[dict]:
