@@ -228,12 +228,16 @@ def test_hook_stop_no_active_timer_exits_0(
     git_repo: Path,
     tjira_stub,
 ):
-    """Stop with no active timer — hook exits 0 regardless (|| true)."""
+    """Stop with no active timer — hook still invokes `tjira timer stop`
+    (which exits 1 internally) and tolerates the failure via `|| true`,
+    so the hook itself exits 0."""
     # No TJIRA_STUB_ACTIVE_KEY → stub returns data:null for status
     stdin_json = json.dumps({"cwd": str(git_repo)})
     result = _run_hook("Stop", stdin_json)
 
     assert result.returncode == 0
+    log_text = tjira_stub.read_text(encoding="utf-8") if tjira_stub.exists() else ""
+    assert "timer stop" in log_text
 
 
 # ---------------------------------------------------------------------------
