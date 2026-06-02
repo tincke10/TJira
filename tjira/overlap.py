@@ -89,3 +89,20 @@ def find_overlap(
         if intervals_overlap(target_start, target_end, c_start, c_end):
             return wl
     return None
+
+
+def format_time_spent(delta: timedelta) -> str:
+    """Format a timedelta as a Jira-compatible ``timeSpent`` string.
+
+    Rules:
+    - Minimum granularity is 1 minute (values below 30s round to 0 then clamp).
+    - Uses Python's banker's rounding (``round()``) for exact half-minutes.
+    - No ``d`` unit — 25 hours stays ``"25h"``, not ``"1d 1h"``.
+    """
+    total_minutes = max(1, round(delta.total_seconds() / 60))
+    hours, minutes = divmod(total_minutes, 60)
+    if hours and minutes:
+        return f"{hours}h {minutes}m"
+    if hours:
+        return f"{hours}h"
+    return f"{minutes}m"
