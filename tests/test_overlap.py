@@ -8,6 +8,7 @@ import pytest
 
 from tjira.overlap import (
     find_overlap,
+    format_time_spent,
     intervals_overlap,
     parse_time_spent,
     worklog_interval,
@@ -135,3 +136,23 @@ def test_find_overlap_ignores_back_to_back():
         {"id": "2", "started": "2026-04-20T11:00:00.000+0000", "timeSpentSeconds": 3600},
     ]
     assert find_overlap(target_start, target_end, candidates) is None
+
+
+# ==================== format_time_spent ====================
+
+@pytest.mark.parametrize(
+    "delta, expected",
+    [
+        (timedelta(hours=1, minutes=30), "1h 30m"),          # 5.A — 90 minutes
+        (timedelta(hours=1), "1h"),                          # 5.B — exactly 1 hour
+        (timedelta(minutes=45), "45m"),                      # 5.C — minutes only
+        (timedelta(seconds=0), "1m"),                        # 5.D — zero → clamp to 1m
+        (timedelta(seconds=30), "1m"),                       # 5.E — 30s → round(0.5)=0, clamped
+        (timedelta(seconds=89 * 60 + 30), "1h 30m"),        # 5.F — 89.5 min → banker's round(89.5)=90
+        (timedelta(hours=25), "25h"),                        # 5.G — 25h, no `d` unit
+        (timedelta(hours=25, minutes=15), "25h 15m"),        # 5.H — 25h 15m
+        (timedelta(seconds=-60), "1m"),                      # 5.I — negative → clamp to 1m
+    ],
+)
+def test_format_time_spent(delta: timedelta, expected: str) -> None:
+    assert format_time_spent(delta) == expected
