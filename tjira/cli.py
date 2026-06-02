@@ -23,6 +23,7 @@ from tjira.commands import list_cmd
 from tjira.commands import log as log_cmd
 from tjira.commands import profile as profile_cmd
 from tjira.commands import switch as switch_cmd
+from tjira.commands import timer as timer_cmd
 from tjira.commands import worklog as worklog_cmd
 from tjira.config import set_profile_override
 from tjira.profiles import ProfileStore
@@ -137,6 +138,7 @@ worklog_cmd.register(app)
 doctor_cmd.register(app)
 profile_cmd.register(app)
 switch_cmd.register(app)
+timer_cmd.register(app)
 
 
 if __name__ == "__main__":
